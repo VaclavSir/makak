@@ -9,6 +9,23 @@ Ground rules for anyone, human or agent, working on this repository.
 - The target host is **macOS**. Development may happen in a Linux sandbox without `sbx`, so nothing may require a real `sbx` to build or test.
 - Work proceeds in iterations - see [docs/roadmap.md](docs/roadmap.md). Build what the current iteration needs, not what a later one might.
 
+## Commands
+
+Dependencies are managed with pnpm. Use `pnpm`, never `npm` or `yarn`.
+
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | Dev server |
+| `pnpm build` | Production build (`adapter-node`) |
+| `pnpm lint` | Lint (oxlint) and check formatting (oxfmt; Prettier for `.svelte`), configured by Ultracite |
+| `pnpm fix` | Fix lint issues and format |
+| `pnpm check` | Type check (`svelte-check`) |
+| `pnpm test` | Unit tests (Vitest) |
+
+Before considering a change done, `pnpm lint`, `pnpm check` and `pnpm test` must pass. Tests live next to the code they test, as `*.test.ts`.
+
+oxfmt does not support `.svelte` files yet, so Prettier with `prettier-plugin-svelte` formats those, using options taken from the Ultracite oxfmt preset. oxlint lints their `<script>` blocks.
+
 ## Documentation
 
 - `README.md` stays brief. Detailed documentation goes in `docs/`.

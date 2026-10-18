@@ -65,7 +65,7 @@ These rules live in the sandbox configuration, not in the Panel. They hold even 
 
 ## How code flows
 
-The sandbox never pushes anywhere. Work moves outward only when something on the host *pulls* it, and the final step to origin is always yours.
+The sandbox never pushes anywhere. Work moves outward only when something on the host _pulls_ it, and the final step to origin is always yours.
 
 ```mermaid
 sequenceDiagram

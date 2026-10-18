@@ -14,6 +14,17 @@ It is built around the [Makak Workflow](docs/workflow.md): sandboxes in clone mo
 
 The Panel is reachable only from the machine it runs on.
 
+## Development
+
+Requires Node.js 22.18 or newer and pnpm.
+
+```sh
+pnpm install
+pnpm dev
+```
+
+See [AGENTS.md](AGENTS.md) for the other commands and the ground rules.
+
 ## Status
 
 Early development. See [docs/roadmap.md](docs/roadmap.md).
