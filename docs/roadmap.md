@@ -1,0 +1,102 @@
+# Roadmap
+
+A high-level plan, split into iterations that each leave the Panel usable. Scope and order will change as we learn. Implementation details belong in the docs for each feature, written when the feature is built.
+
+## 0. Foundations
+
+A running, secured, empty Panel.
+
+- SvelteKit app with a custom Node server, so the proxy listeners can share the process later.
+- `makak start`: load the config, start the server, open the browser with a one-time token.
+- Auth: token exchange, session cookie, `Origin`/`Host` checks, loopback-only binding, a Panel hostname separate from the sandbox suffixes.
+- Config file covering the Panel hostname, sandbox suffixes, listener ports, and the env and handoff directories.
+- Adapter layer for `sbx`/`git`, with a fake implementation for development and tests.
+- Test setup and CI-runnable checks.
+
+**Done when:** `makak start` opens an authenticated, empty Panel, and requests from a wrong origin, a wrong host or another machine are rejected.
+
+## 1. Sandbox overview (read-only)
+
+Replaces `sbx ls` and a notepad.
+
+- Sidebar of all sandboxes, with status, auto-refreshed.
+- Overview: published ports, workspace, copyable terminal commands (`sbx run`, `sbx exec`), SSH host.
+- Notes per sandbox, the first Panel-side metadata, stored on the host.
+- Panel-created sandboxes marked as managed; all others shown as unmanaged.
+
+**Done when:** every sandbox on the host is visible, with everything needed to connect to it.
+
+## 2. Reverse proxy
+
+Stable URLs instead of ephemeral host ports.
+
+- Configurable listeners, each mapping to an ordered list of candidate container ports.
+- Hostname routing by configurable suffixes (longest match wins), HTTP/HTTPS sniffing, WebSocket pass-through, HSTS stripping.
+- Each sandbox has several URLs: one per suffix × listener port, each `https` or `wss` (e.g. livereload).
+- Error pages that name the problem and show the command that fixes it.
+- All of a sandbox's URLs listed in its overview: `https` ones as links, `wss` ones as copyable values. The Panel takes the place of the separate index page.
+- Setup guide for dnsmasq, resolver files and mkcert.
+
+**Done when:** two sandboxes serving the same port are reachable side by side under their own hostnames, including livereload.
+
+## 3. Sandbox lifecycle
+
+Create sandboxes from the Panel, reproducibly.
+
+- Env directory discovery, with the create form generated from the env files' `args:` declarations.
+- `sbx env plan` shown before applying.
+- The exact file set and args recorded and replayed for start, stop and remove.
+- Creating a sandbox from an existing sandbox's config.
+- Passive warnings for workflow deviations: writable extra mounts, forge not denied, dynamic MCP.
+
+**Done when:** a sandbox can be created, stopped, started and removed entirely from the Panel, and recreated identically later.
+
+## 4. Git
+
+No work ever exists only inside a sandbox.
+
+- Branches mirrored into `refs/makak/<sandbox>/*` on a timer and on stop, with the last-mirrored SHA recorded.
+- Status: current branch, and how it compares to the host and origin.
+- Actions: fetch the host and origin, bring a branch to the host, push to origin (optionally `--force-with-lease`).
+- Blocking data-loss confirmation on remove.
+
+**Done when:** removing a sandbox can never silently lose a commit.
+
+## 5. Runs
+
+Non-interactive commands and prompts without a terminal.
+
+- In-sandbox run helper, delivered by a kit, that runs commands detached and records the command, PID, log and exit code.
+- Predefined and arbitrary commands, plus one-shot agent prompts.
+- Output streamed to the browser, with status, stop and rerun. Survives Panel restarts.
+
+**Done when:** `npm start` can be launched, watched, stopped and rerun from the Panel, and is still visible after the Panel restarts.
+
+## 6. MCP approval proxy
+
+The only gate on the MCP channel.
+
+- One endpoint per (server, sandbox), on the Panel's domain, with the sandbox identified by its token.
+- Allowlisted tools pass through; others are held open with progress heartbeats until approved or denied.
+- Global approval queue: readable payloads, **allow once** / **always allow**, the requesting sandbox named, and a notification while anything is pending.
+- Audit log of all calls.
+- Per-sandbox registration through env files, with tokens kept in sbx secrets.
+- Experiment, done first: confirm the sbx gateway forwards progress notifications. This decides how holds work.
+
+**Done when:** a mutating GitLab tool call from a sandbox waits for approval in the Panel, and read-only calls go straight through.
+
+## 7. Cleanup and hardening
+
+- Complete teardown: env, per-sandbox MCP registrations and their secrets.
+- Orphan sweep on start and on demand, reporting config residue and unremoved work separately.
+- Handoff directories: per-sandbox creation, preview, and copying between sandboxes.
+
+## Later
+
+Candidates, not commitments:
+
+- sbx network-approval queue alongside the MCP queue.
+- Editing a running sandbox's network policy and loaded MCPs.
+- Opt-in elevation (TLS in front of HTTP projects) in the proxy.
+- OS notifications or a badge for pending approvals.
+- Merge request review flow.
