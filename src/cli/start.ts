@@ -11,6 +11,8 @@ import type { Config } from "../server/config.ts";
 import { setPanelContext } from "../server/context.ts";
 import { createPanelServer, panelOrigin } from "../server/panel.ts";
 import type { PanelApp } from "../server/panel.ts";
+import { createSandboxes } from "../server/sandboxes.ts";
+import { createSandboxStore } from "../server/state.ts";
 import { createFakeTools, createTools } from "../server/tools/index.ts";
 import type { Tools } from "../server/tools/index.ts";
 
@@ -117,7 +119,12 @@ export const start = async (options: StartOptions): Promise<void> => {
   const tools = options.fake ? createFakeTools() : createTools();
   const auth = createAuth();
 
-  setPanelContext({ config, tools });
+  setPanelContext({
+    config,
+    sandboxes: createSandboxes(tools.sbx),
+    store: createSandboxStore(config.stateDir),
+    tools,
+  });
   await reportTools(tools);
 
   const app = options.dev

@@ -7,7 +7,7 @@
 | Directory | What lives there |
 | --- | --- |
 | `src/cli/` | The `makak` command. Loads config, starts the server, opens the browser. |
-| `src/server/` | Host-side code: config, request checks, auth, the HTTPS server, and the tool adapters. Plain Node and TypeScript, no Vite. |
+| `src/server/` | Host-side code: config, request checks, auth, the HTTPS server, the sandbox list and the Panel's own state. Plain Node and TypeScript, no Vite. |
 | `src/server/tools/` | The only code that spawns processes: `sbx`, `git`, the browser. |
 | `src/routes/`, `src/lib/` | The SvelteKit app. |
 
@@ -61,7 +61,13 @@ Cookies ignore ports. A cookie for `localhost` would be sent to `localhost:<any 
 
 ## Sharing state with SvelteKit
 
-SvelteKit's server code is bundled separately (or, in dev, loaded by Vite), so it gets its own copy of every module, including `src/server/`. Module-level state is therefore not shared. The one shared object is `globalThis`: `makak start` puts a `PanelContext` there (`src/server/context.ts`), with the config and the tool adapters, and routes read it with `getPanelContext()`.
+SvelteKit's server code is bundled separately (or, in dev, loaded by Vite), so it gets its own copy of every module, including `src/server/`. Module-level state is therefore not shared. The one shared object is `globalThis`: `makak start` puts a `PanelContext` there (`src/server/context.ts`), with the config and the tool adapters, and routes read it with `getPanelContext()`. For the same reason, routes can't recognize errors from those objects with `instanceof`; they check the error's `name` instead.
+
+## Sandboxes and Panel state
+
+The sandbox list comes from `sbx ls --json`, which includes the published ports. Its format is undocumented, so the parser (`src/server/tools/sbx.ts`) requires only the name, id and status, and ignores fields it doesn't know. A listing is shared by concurrent requests and reused for two seconds, because every open tab polls it every five.
+
+What the Panel knows that `sbx` doesn't, such as notes, lives in `<stateDir>/sandboxes.json`, keyed by sandbox id rather than name: a name can be reused by an unrelated sandbox after `sbx rm`. The file is written whole, through a rename, and never overwritten when it can't be parsed.
 
 ## Tool adapters
 

@@ -75,6 +75,15 @@ const configSchema = z
           .default([".makak.test"]),
       })
       .prefault({}),
+    ssh: z
+      .strictObject({
+        hostSuffix: z
+          .string()
+          .regex(SUFFIX, "must look like .sbx")
+          .default(".sbx"),
+      })
+      .prefault({}),
+    stateDir: hostPath.prefault("~/.makak/state"),
   })
   .superRefine((config, ctx) => {
     const { hostname } = config.panel;

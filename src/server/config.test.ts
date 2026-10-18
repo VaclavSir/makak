@@ -22,8 +22,16 @@ describe(parseConfig, () => {
       listeners: [],
       suffixes: [".makak.test"],
     });
-    expect(config.envDir).toBe(path.join(homedir(), "makak/envs"));
-    expect(config.handoffsDir).toBe(path.join(homedir(), "makak/handoffs"));
+    expect(config.ssh).toStrictEqual({ hostSuffix: ".sbx" });
+    expect({
+      envDir: config.envDir,
+      handoffsDir: config.handoffsDir,
+      stateDir: config.stateDir,
+    }).toStrictEqual({
+      envDir: path.join(homedir(), "makak/envs"),
+      handoffsDir: path.join(homedir(), "makak/handoffs"),
+      stateDir: path.join(homedir(), ".makak/state"),
+    });
   });
 
   it("accepts a full config", () => {

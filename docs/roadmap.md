@@ -21,12 +21,12 @@ A running, secured, empty Panel.
 
 Replaces `sbx ls` and a notepad.
 
+**Status: done.** Checked against a real `sbx` on 2026-10-18.
+
 - Sidebar of all sandboxes, with status, auto-refreshed.
 - Overview: published ports, workspace, copyable terminal commands (`sbx run`, `sbx exec`), SSH host.
 - Notes per sandbox, the first Panel-side metadata, stored on the host.
 - Panel-created sandboxes marked as managed; all others shown as unmanaged.
-
-Needs a sample of real `sbx ls --json` output: the sbx docs don't document its shape.
 
 **Done when:** every sandbox on the host is visible, with everything needed to connect to it.
 

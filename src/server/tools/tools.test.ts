@@ -28,6 +28,14 @@ describe(exec, () => {
     expect(result).toStrictEqual({ exitCode: 3, stderr: "bad", stdout: "" });
   });
 
+  it("kills a command that runs too long", async () => {
+    await expect(
+      exec(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"], {
+        timeoutMs: 100,
+      })
+    ).rejects.toThrow(/timed out after 0.1s/u);
+  });
+
   it("rejects when the command does not exist", async () => {
     await expect(exec("makak-no-such-command", [])).rejects.toThrow(
       /not installed or not on PATH/u
@@ -68,6 +76,17 @@ describe(createTools, () => {
       ["sbx", ["version"]],
       ["git", ["--version"]],
     ]);
+  });
+
+  it("lists sandboxes with sbx ls --json", async () => {
+    const { calls, run } = recording({
+      stdout: '[{"name": "a", "id": "1", "status": "running"}]',
+    });
+
+    await expect(createTools(run).sbx.list()).resolves.toMatchObject([
+      { id: "1", name: "a", status: "running" },
+    ]);
+    expect(calls).toStrictEqual([["sbx", ["ls", "--json"]]]);
   });
 
   it.each([

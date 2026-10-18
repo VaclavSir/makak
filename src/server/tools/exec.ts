@@ -32,7 +32,8 @@ const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
 
 interface ExecFileError extends Error {
-  code?: number | string;
+  code?: number | string | null;
+  killed?: boolean;
   stderr?: string;
   stdout?: string;
 }
@@ -48,7 +49,18 @@ export const exec: Exec = async (command, args, { cwd, timeoutMs } = {}) => {
     });
     return { exitCode: 0, stderr, stdout };
   } catch (error) {
-    const { code, message, stderr = "", stdout = "" } = error as ExecFileError;
+    const {
+      code,
+      killed,
+      message,
+      stderr = "",
+      stdout = "",
+    } = error as ExecFileError;
+    if (killed === true && timeoutMs !== undefined) {
+      throw new CommandError(
+        `\`${command} ${args.join(" ")}\` timed out after ${timeoutMs / 1000}s`
+      );
+    }
     if (typeof code === "number") {
       return { exitCode: code, stderr, stdout };
     }

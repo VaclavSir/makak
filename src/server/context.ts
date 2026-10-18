@@ -1,9 +1,13 @@
 import type { Config } from "./config.ts";
+import type { Sandboxes } from "./sandboxes.ts";
+import type { SandboxStore } from "./state.ts";
 import type { Tools } from "./tools/index.ts";
 
 /** What SvelteKit routes get from the process that started the Panel. */
 export interface PanelContext {
   config: Config;
+  sandboxes: Sandboxes;
+  store: SandboxStore;
   tools: Tools;
 }
 

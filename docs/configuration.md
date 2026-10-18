@@ -22,7 +22,9 @@ A full example, with the defaults where there are any:
     ]
   },
   "envDir": "~/makak/envs",
-  "handoffsDir": "~/makak/handoffs"
+  "handoffsDir": "~/makak/handoffs",
+  "ssh": { "hostSuffix": ".sbx" },
+  "stateDir": "~/.makak/state"
 }
 ```
 
@@ -35,6 +37,8 @@ A full example, with the defaults where there are any:
 | `proxy.listeners` | `[]` | Ports the reverse proxy listens on, each with the container ports to try, in order. |
 | `envDir` | `~/makak/envs` | The env directory: the sandbox env files to choose from. |
 | `handoffsDir` | `~/makak/handoffs` | Where each sandbox's handoff directory lives. |
+| `ssh.hostSuffix` | `.sbx` | The suffix of the SSH host pattern `sbx setup ssh` wrote (`*.sbx` unless you passed `--alias`). The Panel shows `<sandbox>.sbx` as the SSH host. |
+| `stateDir` | `~/.makak/state` | Where the Panel keeps its own data, such as sandbox notes. |
 
 The reverse proxy, env directory and handoffs are not implemented yet; their settings are validated now so the file format is stable.
 

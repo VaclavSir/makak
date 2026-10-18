@@ -1,0 +1,95 @@
+:root {
+  color-scheme: light dark;
+  --bg: #fafaf9;
+  --surface: #ffffff;
+  --sidebar: #f2f1ef;
+  --border: #e2e0dc;
+  --text: #1c1b1a;
+  --muted: #6b6762;
+  --accent: #b4532a;
+  --selected: #e6e3de;
+  --running: #2f8a4c;
+  --stopped: #8a8580;
+  --error-bg: #fbeae5;
+  --error-text: #8c2f17;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171615;
+    --surface: #1f1e1c;
+    --sidebar: #1b1a19;
+    --border: #33312e;
+    --text: #ebe9e6;
+    --muted: #9b968f;
+    --accent: #e0855c;
+    --selected: #2c2a27;
+    --running: #4cbf6f;
+    --stopped: #7d7872;
+    --error-bg: #3a1e16;
+    --error-text: #f2b39b;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 var(--sans);
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+h1,
+h2 {
+  line-height: 1.2;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+h2 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1rem;
+}
+
+button,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--muted);
+}
+
+.error {
+  border-radius: 6px;
+  background: var(--error-bg);
+  color: var(--error-text);
+  padding: 0.6rem 0.8rem;
+  white-space: pre-wrap;
+}
