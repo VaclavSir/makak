@@ -12,10 +12,45 @@ export interface ProxyListener {
   websocket: boolean;
 }
 
+/**
+ * Adds TLS in front of a plain HTTP server, so its pages get a secure context.
+ * `sandbox` is a regular expression for sandbox names; without `port`, every
+ * sandbox port is elevated.
+ */
+export interface ElevateRule {
+  port?: number | undefined;
+  sandbox: string;
+}
+
 export interface ProxySettings {
+  elevate: ElevateRule[];
   listeners: ProxyListener[];
   suffixes: string[];
 }
+
+const patterns = new Map<string, RegExp>();
+
+/** An elevate rule's pattern, compiled once. Throws if it is invalid. */
+export const sandboxPattern = (source: string): RegExp => {
+  let pattern = patterns.get(source);
+  if (pattern === undefined) {
+    pattern = new RegExp(source, "u");
+    patterns.set(source, pattern);
+  }
+  return pattern;
+};
+
+/** Whether a sandbox port is served over TLS to a plain HTTP upstream. */
+export const isElevated = (
+  rules: readonly ElevateRule[],
+  name: string,
+  sandboxPort: number
+): boolean =>
+  rules.some(
+    (rule) =>
+      (rule.port === undefined || rule.port === sandboxPort) &&
+      sandboxPattern(rule.sandbox).test(name)
+  );
 
 /** The part of a published port the proxy cares about. */
 export interface PortMapping {
@@ -60,6 +95,8 @@ export const resolveUpstream = <Port extends PortMapping>(
 };
 
 export interface SandboxUrl {
+  /** The resolved port is elevated. */
+  elevated: boolean;
   listener: ProxyListener;
   resolution: Resolution<PortMapping>;
   url: string;
@@ -72,7 +109,7 @@ export interface SandboxUrl {
 export const sandboxUrls = (
   name: string,
   ports: readonly PortMapping[],
-  { listeners, suffixes }: ProxySettings
+  { elevate, listeners, suffixes }: ProxySettings
 ): SandboxUrl[] | undefined => {
   const label = hostLabel(name);
   if (label === undefined) {
@@ -82,9 +119,13 @@ export const sandboxUrls = (
     listeners.map((listener) => {
       const scheme = listener.websocket ? "wss" : "https";
       const port = listener.port === 443 ? "" : `:${listener.port}`;
+      const resolution = resolveUpstream(ports, listener.upstream);
       return {
+        elevated:
+          resolution.ok &&
+          isElevated(elevate, name, resolution.port.sandboxPort),
         listener,
-        resolution: resolveUpstream(ports, listener.upstream),
+        resolution,
         url: `${scheme}://${label}${suffix}${port}/`,
       };
     })

@@ -19,17 +19,22 @@ import type { Server, Socket } from "node:net";
 import type { Duplex } from "node:stream";
 
 import { publishCommand, runCommand } from "../../lib/commands.ts";
-import { hostLabel, resolveUpstream } from "../../lib/proxy-urls.ts";
-import type { ProxyListener } from "../../lib/proxy-urls.ts";
+import {
+  hostLabel,
+  isElevated,
+  resolveUpstream,
+} from "../../lib/proxy-urls.ts";
+import type { ElevateRule, ProxyListener } from "../../lib/proxy-urls.ts";
 import { refuseUpgrade } from "../http.ts";
 import type { Sandboxes } from "../sandboxes.ts";
 import { isLoopback } from "../security.ts";
 import type { Sandbox } from "../tools/index.ts";
 import { PAGE_HEADERS, renderPage } from "./pages.ts";
 import type { Page } from "./pages.ts";
-import { matchHost } from "./routing.ts";
+import { hostnameOf, matchHost } from "./routing.ts";
 
 export interface ProxyOptions {
+  elevate: readonly ElevateRule[];
   listener: ProxyListener;
   log: (message: string) => void;
   panelOrigin: string;
@@ -40,6 +45,8 @@ export interface ProxyOptions {
 
 /** Where a request goes: a sandbox port, published on the host. */
 export interface Target {
+  /** TLS from the browser, plain HTTP to the sandbox. */
+  elevated: boolean;
   host: string;
   port: number;
   sandbox: Sandbox;
@@ -84,11 +91,15 @@ const dialHost = (hostIp: string): string => {
 export const route = async (
   host: string | undefined,
   {
+    elevate,
     listener,
     panelOrigin,
     sandboxes,
     suffixes,
-  }: Pick<ProxyOptions, "listener" | "panelOrigin" | "sandboxes" | "suffixes">
+  }: Pick<
+    ProxyOptions,
+    "elevate" | "listener" | "panelOrigin" | "sandboxes" | "suffixes"
+  >
 ): Promise<Route> => {
   const page = (
     status: number,
@@ -175,6 +186,7 @@ export const route = async (
   return {
     ok: true,
     target: {
+      elevated: isElevated(elevate, name, resolution.port.sandboxPort),
       host: dialHost(resolution.port.hostIp),
       port: resolution.port.hostPort,
       sandbox,
@@ -222,19 +234,26 @@ const responseHeaders = (headers: IncomingHttpHeaders): OutgoingHttpHeaders => {
 const isTlsError = (error: NodeJS.ErrnoException) =>
   error.code === "EPROTO" || (error.code?.startsWith("ERR_SSL_") ?? false);
 
-/** The same address with TLS added or removed. */
+/**
+ * The same address with TLS added or removed. The listener serves both, so
+ * the port stays; it is spelled out unless it is the scheme's default.
+ */
 const otherSchemeUrl = (
   req: IncomingMessage,
-  secure: boolean,
-  upgrade: boolean
+  listenerPort: number,
+  { secure, upgrade }: { secure: boolean; upgrade: boolean }
 ) => {
-  const schemes = upgrade ? ["wss", "ws"] : ["https", "http"];
-  return `${schemes[secure ? 1 : 0]}://${req.headers.host}${req.url}`;
+  const tls = !secure;
+  const base = upgrade ? "ws" : "http";
+  const scheme = tls ? `${base}s` : base;
+  const defaultPort = tls ? 443 : 80;
+  const port = listenerPort === defaultPort ? "" : `:${listenerPort}`;
+  return `${scheme}://${hostnameOf(req.headers.host ?? "")}${port}${req.url}`;
 };
 
 const upstreamFailure = (
   error: NodeJS.ErrnoException,
-  { sandbox, sandboxPort }: Target,
+  { elevated, sandbox, sandboxPort }: Target,
   {
     otherScheme,
     panelOrigin,
@@ -242,7 +261,7 @@ const upstreamFailure = (
   }: { otherScheme: string; panelOrigin: string; secure: boolean }
 ): Page => {
   const panelUrl = `${panelOrigin}/sandboxes/${encodeURIComponent(sandbox.name)}`;
-  if (secure && isTlsError(error)) {
+  if (secure && !elevated && isTlsError(error)) {
     return {
       hint: "The proxy passes HTTP and HTTPS through as they are; it never adds or removes TLS.",
       message: `The server on port ${sandboxPort} in ${sandbox.name} doesn't speak HTTPS. Use ${otherScheme} instead.`,
@@ -252,7 +271,11 @@ const upstreamFailure = (
     };
   }
   // A plain request to an HTTPS server fails without a telling error.
-  const https = secure ? "" : ` If it serves HTTPS, use ${otherScheme}.`;
+  let https = secure ? "" : ` If it serves HTTPS, use ${otherScheme}.`;
+  if (elevated) {
+    https =
+      " This port is elevated, so the proxy talks plain HTTP to it; if the server speaks HTTPS itself, remove its proxy.elevate rule.";
+  }
   return {
     hint: `Is the server running, and listening on 0.0.0.0 inside the sandbox?${https}`,
     message: `Connecting to port ${sandboxPort} in ${sandbox.name} failed: ${error.message}.`,
@@ -292,7 +315,7 @@ export interface ProxyServer {
  * sandbox as it came: TLS in, TLS out. Only loopback peers are served.
  */
 export const createProxyServer = (options: ProxyOptions): ProxyServer => {
-  const { log, panelOrigin } = options;
+  const { listener, log, panelOrigin } = options;
   const httpAgent = new HttpAgent({ keepAlive: true });
   // The sandbox's own certificate can't match its proxy hostname, and the
   // hop is loopback, so it isn't checked.
@@ -307,14 +330,16 @@ export const createProxyServer = (options: ProxyOptions): ProxyServer => {
     secure: boolean,
     upgrade: boolean
   ) => {
+    // The browser's scheme, which an elevated upstream must also see.
     const headers = forwardHeaders(req, secure);
     if (upgrade) {
       headers.connection = "Upgrade";
       headers.upgrade = req.headers.upgrade;
     }
+    const overTls = secure && !target.elevated;
     // An upgraded connection is never returned to a pool.
-    const agent = secure ? httpsAgent : httpAgent;
-    return (secure ? httpsRequest : httpRequest)({
+    const agent = overTls ? httpsAgent : httpAgent;
+    return (overTls ? httpsRequest : httpRequest)({
       agent: upgrade ? false : agent,
       headers,
       host: target.host,
@@ -354,6 +379,19 @@ export const createProxyServer = (options: ProxyOptions): ProxyServer => {
       return;
     }
     const { target } = result;
+    if (target.elevated && !secure) {
+      // A plain request would lose the secure context the rule is for.
+      // Temporary, so removing the rule takes effect at once.
+      res.writeHead(307, {
+        "Cache-Control": "no-store",
+        Location: otherSchemeUrl(req, listener.port, {
+          secure,
+          upgrade: false,
+        }),
+      });
+      res.end();
+      return;
+    }
     const upstream = upstreamRequest(req, target, secure, false);
     res.on("close", () => {
       if (gone) {
@@ -380,7 +418,10 @@ export const createProxyServer = (options: ProxyOptions): ProxyServer => {
         sendPage(
           res,
           upstreamFailure(error, target, {
-            otherScheme: otherSchemeUrl(req, secure, false),
+            otherScheme: otherSchemeUrl(req, listener.port, {
+              secure,
+              upgrade: false,
+            }),
             panelOrigin,
             secure,
           })
@@ -412,6 +453,14 @@ export const createProxyServer = (options: ProxyOptions): ProxyServer => {
       return;
     }
     const { target } = result;
+    if (target.elevated && !secure) {
+      refuseUpgrade(
+        socket,
+        403,
+        `Port ${target.sandboxPort} in ${target.sandbox.name} is elevated to TLS. Use ${otherSchemeUrl(req, listener.port, { secure, upgrade: true })}.`
+      );
+      return;
+    }
     const upstream = upstreamRequest(req, target, secure, true);
     socket.on("close", () => upstream.destroy());
     upstream.on("upgrade", (up, upSocket, upHead) => {
@@ -437,7 +486,10 @@ export const createProxyServer = (options: ProxyOptions): ProxyServer => {
       }
       failed(target, error);
       const { hint, message, status } = upstreamFailure(error, target, {
-        otherScheme: otherSchemeUrl(req, secure, true),
+        otherScheme: otherSchemeUrl(req, listener.port, {
+          secure,
+          upgrade: true,
+        }),
         panelOrigin,
         secure,
       });

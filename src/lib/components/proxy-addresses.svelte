@@ -42,7 +42,7 @@
     <p class="muted">These addresses work once the sandbox is running.</p>
   {/if}
   <ul>
-    {#each urls as { listener, resolution, url } (url)}
+    {#each urls as { elevated, listener, resolution, url } (url)}
       <li>
         {#if listener.websocket}
           <code>{url}</code>
@@ -50,7 +50,14 @@
           <a href={url} target="_blank" rel="noreferrer"><code>{url}</code></a>
         {/if}
         {#if resolution.ok}
-          <span class="muted">→ port {resolution.port.sandboxPort}</span>
+          <span
+            class="muted"
+            title={elevated
+              ? "The proxy adds TLS; the server in the sandbox doesn't need it."
+              : undefined}
+          >
+            → port {resolution.port.sandboxPort}{elevated ? " · elevated" : ""}
+          </span>
         {:else}
           <span class="missing" title={publishCommand(name, resolution.publish)}
             >port {listener.upstream.join(" or ")} not published</span

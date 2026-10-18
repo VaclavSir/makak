@@ -34,10 +34,11 @@ Replaces `sbx ls` and a notepad.
 
 Stable URLs instead of ephemeral host ports.
 
-**Status: built, not yet tried against a real `sbx`.**
+**Status: done.** Checked against a real `sbx` on 2026-10-18.
 
 - Configurable listeners, each mapping to an ordered list of candidate container ports.
 - Hostname routing by configurable suffixes (longest match wins), HTTP/HTTPS sniffing, WebSocket pass-through, HSTS stripping.
+- Opt-in elevation: TLS in front of named HTTP ports, for a secure context.
 - Each sandbox has several URLs: one per suffix × listener port, each `https` or `wss` (e.g. livereload).
 - Error pages that name the problem and show the command that fixes it.
 - All of a sandbox's URLs listed in its overview: `https` ones as links, `wss` ones as copyable values. The Panel takes the place of the separate index page.
@@ -103,7 +104,6 @@ Candidates, not commitments:
 
 - sbx network-approval queue alongside the MCP queue.
 - Editing a running sandbox's network policy and loaded MCPs.
-- Opt-in elevation (TLS in front of HTTP projects) in the proxy.
 - OS notifications or a badge for pending approvals.
 - Merge request review flow.
 - Signing a browser in again without restarting the Panel, e.g. `makak open` talking to the running instance.

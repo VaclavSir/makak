@@ -19,6 +19,7 @@ describe(parseConfig, () => {
       },
     });
     expect(config.proxy).toStrictEqual({
+      elevate: [],
       listeners: [],
       suffixes: [".makak.test"],
       tls: {
@@ -90,6 +91,23 @@ describe(parseConfig, () => {
         },
       })
     ).toThrow(/already used/u);
+  });
+
+  it("rejects an elevate rule that is not a regular expression", () => {
+    expect(() =>
+      parseConfig({ proxy: { elevate: [{ sandbox: "client-(" }] } })
+    ).toThrow(/regular expression/u);
+  });
+
+  it("rejects an elevate rule for a port no listener resolves to", () => {
+    expect(() =>
+      parseConfig({
+        proxy: {
+          elevate: [{ port: 443, sandbox: "^client-" }],
+          listeners: [{ port: 443, upstream: [8000] }],
+        },
+      })
+    ).toThrow(/must name the sandbox port/u);
   });
 
   it("rejects a suffix listed twice", () => {

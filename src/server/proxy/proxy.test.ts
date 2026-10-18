@@ -177,8 +177,11 @@ describe("Reverse proxy", () => {
       sandbox("idle", [[8000, httpPort]], "stopped"),
       sandbox("bare", []),
       sandbox("dead", [[8000, closedPort]]),
+      sandbox("client-web", [[8000, httpPort]]),
+      sandbox("client-dead", [[8000, closedPort]]),
     ];
     proxy = createProxyServer({
+      elevate: [{ port: 8000, sandbox: "^client-" }],
       listener: { port: 443, upstream: [443, 8000], websocket: false },
       log: () => {},
       panelOrigin: PANEL,
@@ -310,7 +313,7 @@ describe("Reverse proxy", () => {
     const { body, status } = await send("web.makak.test", { secure: true });
     expect(status).toBe(502);
     expect(body).toContain(
-      "doesn&#39;t speak HTTPS. Use http://web.makak.test/ instead."
+      "doesn&#39;t speak HTTPS. Use http://web.makak.test:443/ instead."
     );
   });
 
@@ -334,6 +337,46 @@ describe("Reverse proxy", () => {
     }
   });
 
+  describe("with an elevate rule", () => {
+    it("adds TLS in front of a plain HTTP server", async () => {
+      await expect(
+        json("client-web.makak.test", { secure: true })
+      ).resolves.toMatchObject({ forwardedProto: "https", scheme: "http" });
+    });
+
+    it("redirects plain HTTP to HTTPS, without letting it be cached", async () => {
+      const { headers, status } = await send("client-web.makak.test:443", {
+        path: "/a?b=c",
+      });
+      expect(status).toBe(307);
+      expect(headers.location).toBe("https://client-web.makak.test/a?b=c");
+      expect(headers["cache-control"]).toBe("no-store");
+    });
+
+    it("passes wss through to a plain WebSocket server", async () => {
+      const socket = await handshake("client-web.makak.test", true);
+      try {
+        const head = await received(socket)("\r\n\r\n");
+        expect(head).toContain("X-Scheme: http");
+      } finally {
+        socket.destroy();
+      }
+    });
+
+    it("keeps the usual hints when the server can't be reached", async () => {
+      const { body } = await send("client-dead.makak.test", { secure: true });
+      expect(body).toContain("listening on 0.0.0.0");
+      expect(body).toContain("remove its proxy.elevate rule");
+    });
+
+    it("refuses a plain WebSocket", async () => {
+      const socket = await handshake("client-web.makak.test", false);
+      const response = await received(socket)("Use ws");
+      expect(response).toMatch(/^HTTP\/1\.1 403 /u);
+      expect(response).toContain("Use wss://client-web.makak.test/livereload.");
+    });
+  });
+
   it("refuses a WebSocket handshake it can't route", async () => {
     const socket = await handshake("bare.makak.test", false);
     const response = await received(socket)("--publish");
@@ -351,6 +394,7 @@ describe("Reverse proxy on a wildcard address", () => {
     "drops connections from peers that are not loopback",
     async () => {
       const proxy = createProxyServer({
+        elevate: [],
         listener: { port: 443, upstream: [8000], websocket: false },
         log: () => {},
         panelOrigin: PANEL,

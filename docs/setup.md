@@ -90,7 +90,7 @@ The proxy is off until the [configuration](configuration.md) has listeners, for 
 
 Restart the Panel. Each sandbox's page lists its addresses, and says which ports to publish. A sandbox's server must listen on `0.0.0.0` inside the sandbox, or publishing its port reaches nothing.
 
-The proxy passes HTTP and HTTPS through unchanged: an `https://` address needs a server that speaks HTTPS, and a plain HTTP server is reached as `http://feature-a.makak.test/`. Livereload follows the page: an HTTPS page needs `wss://`.
+The proxy passes HTTP and HTTPS through unchanged: an `https://` address needs a server that speaks HTTPS, and a plain HTTP server is reached as `http://feature-a.makak.test/`. Livereload follows the page: an HTTPS page needs `wss://`. To serve a plain HTTP server as `https://`, for a secure context, add an [elevate rule](configuration.md#elevation).
 
 ## Troubleshooting
 
@@ -98,7 +98,7 @@ The proxy passes HTTP and HTTPS through unchanged: an `https://` address needs a
 - **"This login link is invalid or has expired"**: login links work once, within a minute. Restart `makak start`.
 - **"Misdirected Request"**: the Panel was reached under a different hostname or port than configured, e.g. `localhost`. Use the URL `makak start` prints.
 - **"Port not published"** on a sandbox address: run the command the page shows, on the host, then reload. The sandbox doesn't need to be recreated.
-- **"Not an HTTPS server"**: the sandbox's server speaks plain HTTP. Use the `http://` address the page shows.
+- **"Not an HTTPS server"**: the sandbox's server speaks plain HTTP. Use the `http://` address the page shows, or [elevate](configuration.md#elevation) the port.
 - **A sandbox address won't resolve**: check that dnsmasq is running (`sudo brew services list`) and that `/etc/resolver/<suffix>` exists.
 - **"Not secure" in the browser for a sandbox address** after adding a suffix: create the certificate again with every suffix, and restart the Panel.
 - **A sandbox address keeps switching to `https://`**: the browser remembered HSTS from an earlier server. The proxy removes HSTS headers, but a policy already stored has to be deleted at `chrome://net-internals/#hsts`.

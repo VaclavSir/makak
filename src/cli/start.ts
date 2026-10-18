@@ -155,7 +155,7 @@ const startProxy = async (
   origin: string,
   sandboxes: Sandboxes
 ): Promise<ProxyServer[]> => {
-  const { listeners, suffixes } = config.proxy;
+  const { elevate, listeners, suffixes } = config.proxy;
   if (listeners.length === 0) {
     return [];
   }
@@ -164,6 +164,7 @@ const startProxy = async (
   try {
     for (const listener of listeners) {
       const proxy = createProxyServer({
+        elevate,
         listener,
         log,
         panelOrigin: origin,

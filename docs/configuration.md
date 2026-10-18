@@ -20,6 +20,10 @@ A full example, with the defaults where there are any:
       { "port": 443, "upstream": [443, 8000] },
       { "port": 35729, "upstream": [35729], "websocket": true }
     ],
+    "elevate": [
+      { "sandbox": "^client-", "port": 8000 },
+      { "sandbox": "^client-", "port": 35729 }
+    ],
     "tls": {
       "cert": "~/.makak/tls/sandboxes.pem",
       "key": "~/.makak/tls/sandboxes-key.pem"
@@ -42,6 +46,9 @@ A full example, with the defaults where there are any:
 | `proxy.listeners[].port` |  | The port in the address, e.g. `443` for `https://feature-a.makak.test/`. |
 | `proxy.listeners[].upstream` |  | Sandbox ports to serve, in order of preference: the first one the sandbox publishes is used. When none is, the error page asks to publish the last. |
 | `proxy.listeners[].websocket` | `false` | For WebSockets, such as livereload: the Panel shows its address as a `wss://` value to copy, not a link. The proxy serves it like any other listener, so a livereload server's script still loads over HTTP(S). |
+| `proxy.elevate` | `[]` | Sandbox ports served over TLS although the server inside speaks plain HTTP; see [elevation](#elevation). |
+| `proxy.elevate[].sandbox` |  | A regular expression for the sandbox names the rule applies to, e.g. `^client-`. Unanchored, like any regular expression: `client` matches `my-client-2`. |
+| `proxy.elevate[].port` | every port | The sandbox port, after the listener's `upstream` list is resolved: `8000`, not the `443` in the address. Must be in some listener's `upstream` list. Leave it out only for sandboxes with no HTTPS servers of their own. |
 | `proxy.tls.cert`, `proxy.tls.key` | `~/.makak/tls/sandboxes.pem`, `~/.makak/tls/sandboxes-key.pem` | Wildcard certificate for every suffix; see [setup](setup.md#reverse-proxy). Read only when there are listeners. |
 | `envDir` | `~/makak/envs` | The env directory: the sandbox env files to choose from. |
 | `handoffsDir` | `~/makak/handoffs` | Where each sandbox's handoff directory lives. |
@@ -56,6 +63,14 @@ A listener on a port below 1024, such as 443, binds the wildcard address: macOS 
 
 `upstream` exists because the port in the address and the port in the sandbox needn't match. `{ "port": 443, "upstream": [443, 8000] }` serves the sandbox's own 443 if it publishes one, and its 8000 otherwise, so a dev server on 8000 is reachable on the standard HTTPS port. The proxy only sees published ports, not what listens in the sandbox: a sandbox that serves 443 must publish it, or the address quietly goes to its 8000.
 
+### Elevation
+
+The proxy normally passes the scheme through: an HTTP server is reached as `http://`, an HTTPS server as `https://`. But a plain HTTP page on a sandbox hostname is not a secure context, so service workers, `crypto.subtle` and `Secure` cookies stop working for it; on `http://localhost` they worked.
+
+An elevate rule fixes that for the sandbox ports it names: the browser gets `https://`, the server inside keeps speaking plain HTTP, and `X-Forwarded-Proto: https` tells it which scheme to put in the URLs it generates. `http://` requests to the port are redirected to `https://`.
+
+Elevate the livereload port too. An `https://` page can't open a `ws://` connection, so livereload needs `wss://`, which an elevated port provides. A server that speaks HTTPS itself must not be elevated; its error page says so.
+
 ## Validation
 
 `makak start` refuses to start on an invalid file, and lists every problem. Beyond types and ranges, it checks that:
@@ -63,5 +78,6 @@ A listener on a port below 1024, such as 443, binds the wildcard address: macOS 
 - **The Panel is on its own domain.** `panel.hostname` must not be under any sandbox suffix, nor share its last two labels with one. A sandbox must never be able to share a site with the Panel. The two-label rule is a simple stand-in for the public suffix list, enough for `.test` and ordinary company domains.
 - **The Panel hostname is a real name.** At least two labels, lower case, and not an IP address or `localhost`.
 - **No suffix is listed twice.**
+- **Elevate rules are valid regular expressions**, and their ports are in some listener's `upstream` list.
 - **Ports don't collide.** No two listeners, and no listener and the Panel, share a port.
 - **There are no unknown keys**, so a typo fails instead of being ignored.

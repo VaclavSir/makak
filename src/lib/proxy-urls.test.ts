@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { hostLabel, resolveUpstream, sandboxUrls } from "./proxy-urls.ts";
+import {
+  hostLabel,
+  isElevated,
+  resolveUpstream,
+  sandboxUrls,
+} from "./proxy-urls.ts";
 
 const tcp = (sandboxPort: number, protocol = "tcp4") => ({
   protocol,
@@ -46,8 +51,23 @@ describe(resolveUpstream, () => {
   });
 });
 
+describe(isElevated, () => {
+  const rules = [{ port: 8000, sandbox: "^client-" }, { sandbox: "^legacy$" }];
+
+  it.each([
+    ["client-a", 8000, true],
+    ["client-a", 35_729, false],
+    ["my-client-a", 8000, false],
+    ["legacy", 35_729, true],
+    ["legacy-2", 8000, false],
+  ])("elevates %s port %i: %s", (name, port, elevated) => {
+    expect(isElevated(rules, name, port)).toBe(elevated);
+  });
+});
+
 describe(sandboxUrls, () => {
   const settings = {
+    elevate: [{ port: 8000, sandbox: "^a$" }],
     listeners: [
       { port: 443, upstream: [443, 8000], websocket: false },
       { port: 35_729, upstream: [35_729], websocket: true },
@@ -68,7 +88,7 @@ describe(sandboxUrls, () => {
 
   it("resolves each URL's port", () => {
     const [web, live] = sandboxUrls("a", [tcp(8000)], settings) ?? [];
-    expect(web?.resolution).toMatchObject({ ok: true });
+    expect(web).toMatchObject({ elevated: true, resolution: { ok: true } });
     expect(live?.resolution).toStrictEqual({ ok: false, publish: 35_729 });
   });
 

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import * as z from "zod";
 
-import { DNS_LABEL } from "../lib/proxy-urls.ts";
+import { DNS_LABEL, sandboxPattern } from "../lib/proxy-urls.ts";
 
 export const DEFAULT_CONFIG_PATH = path.join(
   homedir(),
@@ -41,6 +41,15 @@ const hostPath = z
 
 const port = z.number().int().min(1).max(65_535);
 
+const isRegExp = (source: string) => {
+  try {
+    sandboxPattern(source);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const configSchema = z
   .strictObject({
     envDir: hostPath.prefault("~/makak/envs"),
@@ -65,6 +74,16 @@ const configSchema = z
       .prefault({}),
     proxy: z
       .strictObject({
+        elevate: z
+          .array(
+            z.strictObject({
+              port: port.optional(),
+              sandbox: z.string().refine(isRegExp, {
+                message: "must be a valid regular expression",
+              }),
+            })
+          )
+          .default([]),
         listeners: z
           .array(
             z.strictObject({
@@ -118,6 +137,21 @@ const configSchema = z
           code: "custom",
           message: `the Panel hostname ${hostname} must be on a different domain than the sandbox suffix ${suffix}`,
           path: ["proxy", "suffixes", index],
+        });
+      }
+    }
+
+    // A rule names the sandbox port an address resolves to. One that no
+    // listener can resolve to, such as the 443 in the address, never matches.
+    const sandboxPorts = new Set(
+      config.proxy.listeners.flatMap(({ upstream }) => upstream)
+    );
+    for (const [index, rule] of config.proxy.elevate.entries()) {
+      if (rule.port !== undefined && !sandboxPorts.has(rule.port)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `port ${rule.port} is not in any listener's upstream list, so the rule never applies; it must name the sandbox port, such as 8000, not the port in the address`,
+          path: ["proxy", "elevate", index, "port"],
         });
       }
     }
