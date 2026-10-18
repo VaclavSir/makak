@@ -35,9 +35,11 @@ export const load: PageServerLoad = async ({ depends, params }) => {
     }
     throw error;
   }
+  const { listeners, suffixes } = config.proxy;
   return {
     maxNotesLength: MAX_NOTES_LENGTH,
     notes,
+    proxy: { listeners, suffixes },
     sandbox,
     sshSuffix: config.ssh.hostSuffix,
   };

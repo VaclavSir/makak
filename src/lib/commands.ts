@@ -15,6 +15,10 @@ export interface SandboxCommand {
   value: string;
 }
 
+/** Starts the sandbox if needed and attaches its agent. */
+export const runCommand = (name: string): string =>
+  command("sbx", "run", "--name", name);
+
 /**
  * Terminal commands and the SSH host for a sandbox. `sshSuffix` matches the
  * host pattern `sbx setup ssh` wrote, `*.sbx` by default.
@@ -23,11 +27,11 @@ export const sandboxCommands = (
   name: string,
   sshSuffix: string
 ): SandboxCommand[] => [
-  { label: "Attach the agent", value: command("sbx", "run", "--name", name) },
+  { label: "Attach the agent", value: runCommand(name) },
   { label: "Open a shell", value: command("sbx", "exec", "-it", name, "bash") },
   { label: "SSH host", value: `${name}${sshSuffix}` },
 ];
 
-/** Publishes a sandbox port; `<port>` is left for the user to fill in. */
-export const publishCommand = (name: string): string =>
-  `${command("sbx", "ports", name, "--publish")} <port>`;
+/** Publishes a sandbox port; without one, `<port>` is left to fill in. */
+export const publishCommand = (name: string, port?: number): string =>
+  `${command("sbx", "ports", name, "--publish")} ${port ?? "<port>"}`;

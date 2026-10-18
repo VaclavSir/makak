@@ -40,4 +40,8 @@ describe(publishCommand, () => {
   it("quotes the name", () => {
     expect(publishCommand("a b")).toBe("sbx ports 'a b' --publish <port>");
   });
+
+  it("fills in the port when given", () => {
+    expect(publishCommand("a", 8000)).toBe("sbx ports a --publish 8000");
+  });
 });

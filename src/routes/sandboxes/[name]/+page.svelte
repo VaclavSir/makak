@@ -3,6 +3,7 @@
   import { publishCommand, sandboxCommands } from "#lib/commands.ts";
   import CopyField from "#lib/components/copy-field.svelte";
   import NotesForm from "#lib/components/notes-form.svelte";
+  import ProxyAddresses from "#lib/components/proxy-addresses.svelte";
   import StatusDot from "#lib/components/status-dot.svelte";
   import { SANDBOX_PAGE } from "#lib/dependencies.ts";
   import { formatTime } from "#lib/format.ts";
@@ -77,6 +78,14 @@
       {/each}
     </ul>
   {/if}
+
+  <h2>Addresses</h2>
+  <ProxyAddresses
+    name={sandbox.name}
+    ports={sandbox.ports}
+    running={sandbox.status === "running"}
+    settings={data.proxy}
+  />
 
   <h2>Published ports</h2>
   {#if sandbox.ports.length === 0}

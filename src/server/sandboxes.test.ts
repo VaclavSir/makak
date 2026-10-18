@@ -85,6 +85,65 @@ describe(createSandboxes, () => {
     });
   });
 
+  it("lists again after invalidate", async () => {
+    const sbx = counting([[...FAKE_SANDBOXES]]);
+    const sandboxes = createSandboxes(sbx);
+
+    await sandboxes.list();
+    sandboxes.invalidate();
+    await sandboxes.list();
+    expect(sbx.calls()).toBe(2);
+  });
+
+  it("keeps sharing a listing in progress on invalidate", async () => {
+    const sbx = counting([[...FAKE_SANDBOXES]]);
+    const sandboxes = createSandboxes(sbx);
+
+    const first = sandboxes.list();
+    sandboxes.invalidate();
+    await Promise.all([first, sandboxes.list()]);
+    expect(sbx.calls()).toBe(1);
+  });
+
+  describe("recent", () => {
+    it("answers from the expired listing while a new one runs", async () => {
+      const time = clock();
+      const pending = Promise.withResolvers<Sandbox[]>();
+      const results = [Promise.resolve([...FAKE_SANDBOXES]), pending.promise];
+      const sandboxes = createSandboxes(
+        { list: () => results.shift() ?? pending.promise },
+        { now: time.now, ttlMs: 2000 }
+      );
+
+      await sandboxes.recent();
+      time.advance(5000);
+      // The second listing never finishes; recent doesn't wait for it.
+      await expect(sandboxes.recent().then(names)).resolves.toHaveLength(3);
+    });
+
+    it("waits for a new listing once the old one is too old", async () => {
+      const time = clock();
+      const sbx = counting([[...FAKE_SANDBOXES], []]);
+      const sandboxes = createSandboxes(sbx, {
+        maxStaleMs: 30_000,
+        now: time.now,
+      });
+
+      await sandboxes.recent();
+      time.advance(30_000);
+      await expect(sandboxes.recent()).resolves.toStrictEqual([]);
+    });
+
+    it("waits for a new listing after invalidate", async () => {
+      const sbx = counting([[...FAKE_SANDBOXES], []]);
+      const sandboxes = createSandboxes(sbx);
+
+      await sandboxes.recent();
+      sandboxes.invalidate();
+      await expect(sandboxes.recent()).resolves.toStrictEqual([]);
+    });
+  });
+
   it("finds nothing for an unknown name", async () => {
     const sandboxes = createSandboxes(counting([[...FAKE_SANDBOXES]]));
     await expect(sandboxes.find("nope")).resolves.toBeUndefined();

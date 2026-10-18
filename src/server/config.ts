@@ -4,16 +4,20 @@ import path from "node:path";
 
 import * as z from "zod";
 
+import { DNS_LABEL } from "../lib/proxy-urls.ts";
+
 export const DEFAULT_CONFIG_PATH = path.join(
   homedir(),
   ".makak",
   "config.json"
 );
 
-const LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
 // At least two labels, and an alphabetic last label, which rules out IP literals and `localhost`.
-const HOSTNAME = new RegExp(`^(?:${LABEL}\\.)+[a-z][a-z0-9-]*[a-z0-9]$`, "u");
-const SUFFIX = new RegExp(`^(?:\\.${LABEL})+$`, "u");
+const HOSTNAME = new RegExp(
+  `^(?:${DNS_LABEL}\\.)+[a-z][a-z0-9-]*[a-z0-9]$`,
+  "u"
+);
+const SUFFIX = new RegExp(`^(?:\\.${DNS_LABEL})+$`, "u");
 
 const expandHome = (value: string): string =>
   value === "~" || value.startsWith("~/")
@@ -66,6 +70,7 @@ const configSchema = z
             z.strictObject({
               port,
               upstream: z.array(port).min(1),
+              websocket: z.boolean().default(false),
             })
           )
           .default([]),
@@ -73,6 +78,12 @@ const configSchema = z
           .array(z.string().regex(SUFFIX, "must look like .makak.test"))
           .min(1)
           .default([".makak.test"]),
+        tls: z
+          .strictObject({
+            cert: hostPath.prefault("~/.makak/tls/sandboxes.pem"),
+            key: hostPath.prefault("~/.makak/tls/sandboxes-key.pem"),
+          })
+          .prefault({}),
       })
       .prefault({}),
     ssh: z
@@ -88,6 +99,13 @@ const configSchema = z
   .superRefine((config, ctx) => {
     const { hostname } = config.panel;
     for (const [index, suffix] of config.proxy.suffixes.entries()) {
+      if (config.proxy.suffixes.indexOf(suffix) !== index) {
+        ctx.addIssue({
+          code: "custom",
+          message: `the suffix ${suffix} is listed twice`,
+          path: ["proxy", "suffixes", index],
+        });
+      }
       const domain = suffix.slice(1);
       if (hostname === domain || hostname.endsWith(suffix)) {
         ctx.addIssue({

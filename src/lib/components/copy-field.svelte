@@ -1,30 +1,13 @@
 <script lang="ts">
+  import CopyButton from "./copy-button.svelte";
+
   let { label, value }: { label: string; value: string } = $props();
-
-  const FEEDBACK_MS = 1500;
-
-  let feedback = $state<"Copied" | "Copy failed" | undefined>();
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      feedback = "Copied";
-    } catch {
-      // Denied clipboard access. The value is still there to select by hand.
-      feedback = "Copy failed";
-    }
-    setTimeout(() => {
-      feedback = undefined;
-    }, FEEDBACK_MS);
-  };
 </script>
 
 <div class="field">
   <span class="label">{label}</span>
   <code>{value}</code>
-  <button type="button" onclick={copy} aria-label="Copy {label}">
-    {feedback ?? "Copy"}
-  </button>
+  <CopyButton {label} {value} />
 </div>
 
 <style>
@@ -43,11 +26,6 @@
 
   code {
     overflow-wrap: anywhere;
-  }
-
-  button {
-    min-width: 5rem;
-    font-size: 0.85rem;
   }
 
   @media (max-width: 40rem) {

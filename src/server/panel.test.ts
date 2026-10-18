@@ -158,6 +158,40 @@ describe("Panel server", () => {
     expect(reached).toStrictEqual([]);
   });
 
+  it("reloads a cross-site navigation, so the browser sends the cookie", async () => {
+    reached.length = 0;
+    const res = await send({
+      headers: { "sec-fetch-mode": "navigate", "sec-fetch-site": "cross-site" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toContain('<meta http-equiv="refresh" content="0">');
+    expect(res.headers["set-cookie"]?.[0]).toMatch(/^__Host-makak-reload=1;/u);
+    expect(reached).toStrictEqual([]);
+  });
+
+  it("reloads only once, even if the reload still counts as cross-site", async () => {
+    const res = await send({
+      headers: {
+        cookie: "__Host-makak-reload=1",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "cross-site",
+      },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("asks for a login when a same-site reload still has no session", async () => {
+    await expect(
+      statusOf({
+        headers: {
+          "sec-fetch-mode": "navigate",
+          "sec-fetch-site": "same-origin",
+        },
+      })
+    ).resolves.toBe(401);
+  });
+
   it("exchanges a login token for a session cookie and redirects home", async () => {
     const res = await send({
       path: `${LOGIN_PATH}?token=${auth.issueLoginToken()}`,

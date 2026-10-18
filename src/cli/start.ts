@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Server } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createAuth, LOGIN_PATH } from "../server/auth.ts";
@@ -11,7 +12,10 @@ import type { Config } from "../server/config.ts";
 import { setPanelContext } from "../server/context.ts";
 import { createPanelServer, panelOrigin } from "../server/panel.ts";
 import type { PanelApp } from "../server/panel.ts";
+import { createProxyServer } from "../server/proxy/proxy.ts";
+import type { ProxyServer } from "../server/proxy/proxy.ts";
 import { createSandboxes } from "../server/sandboxes.ts";
+import type { Sandboxes } from "../server/sandboxes.ts";
 import { createSandboxStore } from "../server/state.ts";
 import { createFakeTools, createTools } from "../server/tools/index.ts";
 import type { Tools } from "../server/tools/index.ts";
@@ -33,16 +37,46 @@ const readTlsFile = async (file: string, what: string) => {
     return await readFile(file);
   } catch (error) {
     throw new Error(
-      `Cannot read the Panel's TLS ${what} ${file}: ${(error as Error).message}. See docs/setup.md.`,
+      `Cannot read the ${what} ${file}: ${(error as Error).message}. See docs/setup.md.`,
       { cause: error }
     );
   }
 };
 
-const readTls = async ({ cert, key }: Config["panel"]["tls"]) => ({
-  cert: await readTlsFile(cert, "certificate"),
-  key: await readTlsFile(key, "key"),
+const readTls = async (
+  { cert, key }: Config["panel"]["tls"],
+  owner: string
+) => ({
+  cert: await readTlsFile(cert, `${owner} TLS certificate`),
+  key: await readTlsFile(key, `${owner} TLS key`),
 });
+
+/** Binds a server, turning the usual failures into messages that say what to do. */
+const bind = async (
+  server: Server,
+  port: number,
+  host: string | undefined,
+  what: string
+) => {
+  server.listen(port, host);
+  try {
+    await once(server, "listening");
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "EADDRINUSE") {
+      throw new Error(`${what} can't use port ${port}: it is already in use.`, {
+        cause: error,
+      });
+    }
+    if (code === "EACCES") {
+      throw new Error(
+        `${what} can't use port ${port}: permission denied. See docs/configuration.md.`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+};
 
 const productionApp = async (origin: string): Promise<PanelApp> => {
   if (!existsSync(BUILD_HANDLER)) {
@@ -111,17 +145,61 @@ const reportTools = async (tools: Tools) => {
   await Promise.all(checks);
 };
 
+/**
+ * One server per listener. macOS lets a normal user bind a port below 1024
+ * only on the wildcard address, so those bind it, and the proxy drops
+ * non-loopback peers itself. The rest bind loopback.
+ */
+const startProxy = async (
+  config: Config,
+  origin: string,
+  sandboxes: Sandboxes
+): Promise<ProxyServer[]> => {
+  const { listeners, suffixes } = config.proxy;
+  if (listeners.length === 0) {
+    return [];
+  }
+  const tls = await readTls(config.proxy.tls, "reverse proxy's");
+  const proxies: ProxyServer[] = [];
+  try {
+    for (const listener of listeners) {
+      const proxy = createProxyServer({
+        listener,
+        log,
+        panelOrigin: origin,
+        sandboxes,
+        suffixes,
+        tls,
+      });
+      proxies.push(proxy);
+      const host = listener.port < 1024 ? undefined : "127.0.0.1";
+      // oxlint-disable-next-line no-await-in-loop -- report the failing port
+      await bind(proxy.server, listener.port, host, "The reverse proxy");
+      log(
+        `Proxy listening on port ${listener.port}, to sandbox port ${listener.upstream.join(" or ")}`
+      );
+    }
+  } catch (error) {
+    for (const proxy of proxies) {
+      proxy.close();
+    }
+    throw error;
+  }
+  return proxies;
+};
+
 export const start = async (options: StartOptions): Promise<void> => {
   const config = await loadConfig(options.configPath);
   const { hostname, port } = config.panel;
   const origin = panelOrigin(hostname, port);
-  const tls = await readTls(config.panel.tls);
+  const tls = await readTls(config.panel.tls, "Panel's");
   const tools = options.fake ? createFakeTools() : createTools();
   const auth = createAuth();
+  const sandboxes = createSandboxes(tools.sbx);
 
   setPanelContext({
     config,
-    sandboxes: createSandboxes(tools.sbx),
+    sandboxes,
     store: createSandboxStore(config.stateDir),
     tools,
   });
@@ -140,23 +218,16 @@ export const start = async (options: StartOptions): Promise<void> => {
   });
 
   // Loopback only. The hostname resolves to 127.0.0.1; see docs/setup.md.
-  server.listen(port, "127.0.0.1");
-  try {
-    await once(server, "listening");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
-      throw new Error(
-        `Port ${port} is already in use. Is the Panel already running?`,
-        { cause: error }
-      );
-    }
-    throw error;
-  }
+  await bind(server, port, "127.0.0.1", "The Panel");
+  const proxies = await startProxy(config, origin, sandboxes);
 
   const shutdown = async () => {
     log("Stopping");
     server.close();
     server.closeAllConnections();
+    for (const proxy of proxies) {
+      proxy.close();
+    }
     await app.close?.();
     process.exit(0);
   };

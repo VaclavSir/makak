@@ -21,6 +21,10 @@ describe(parseConfig, () => {
     expect(config.proxy).toStrictEqual({
       listeners: [],
       suffixes: [".makak.test"],
+      tls: {
+        cert: path.join(homedir(), ".makak/tls/sandboxes.pem"),
+        key: path.join(homedir(), ".makak/tls/sandboxes-key.pem"),
+      },
     });
     expect(config.ssh).toStrictEqual({ hostSuffix: ".sbx" });
     expect({
@@ -46,7 +50,7 @@ describe(parseConfig, () => {
 
     expect(config.envDir).toBe("/srv/envs");
     expect(config.proxy.listeners).toStrictEqual([
-      { port: 443, upstream: [443, 8000] },
+      { port: 443, upstream: [443, 8000], websocket: false },
     ]);
   });
 
@@ -86,6 +90,12 @@ describe(parseConfig, () => {
         },
       })
     ).toThrow(/already used/u);
+  });
+
+  it("rejects a suffix listed twice", () => {
+    expect(() =>
+      parseConfig({ proxy: { suffixes: [".makak.test", ".makak.test"] } })
+    ).toThrow(/listed twice/u);
   });
 
   it("rejects unknown keys, so typos are not silently ignored", () => {

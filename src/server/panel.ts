@@ -11,6 +11,7 @@ import {
   sessionIdsFromCookieHeader,
 } from "./auth.ts";
 import type { Auth } from "./auth.ts";
+import { refuseUpgrade } from "./http.ts";
 import { allowedHosts, checkRequest, isLoopback } from "./security.ts";
 import type { Expectations } from "./security.ts";
 
@@ -46,15 +47,36 @@ const sendText = (res: ServerResponse, status: number, message: string) => {
   res.end(`${message}\n`);
 };
 
+/**
+ * A link from another site, such as a sandbox's proxy page, is a cross-site
+ * navigation, so the browser leaves out the SameSite=Strict session cookie.
+ * Reloading from the Panel's own page sends it.
+ */
+const isCrossSiteNavigation = (req: IncomingMessage) =>
+  req.method === "GET" &&
+  req.headers["sec-fetch-site"] === "cross-site" &&
+  req.headers["sec-fetch-mode"] === "navigate";
+
+// Marks the reload, so a browser that still calls it cross-site gets the 401
+// instead of reloading forever. Lax, so it is sent on that navigation.
+const RELOAD_COOKIE = "__Host-makak-reload";
+const RELOAD_MARK = new RegExp(`(?:^|;\\s*)${RELOAD_COOKIE}=`, "u");
+
+const shouldReload = (req: IncomingMessage) =>
+  isCrossSiteNavigation(req) && !RELOAD_MARK.test(req.headers.cookie ?? "");
+
+const reloadSameSite = (res: ServerResponse) => {
+  res.writeHead(200, {
+    "Cache-Control": "no-store",
+    "Content-Type": "text/html; charset=utf-8",
+    "Set-Cookie": `${RELOAD_COOKIE}=1; Max-Age=10; Path=/; Secure; HttpOnly; SameSite=Lax`,
+  });
+  res.end('<!doctype html><meta http-equiv="refresh" content="0">\n');
+};
+
 const redirectHome = (res: ServerResponse) => {
   res.writeHead(303, { Location: "/" });
   res.end();
-};
-
-const rejectUpgrade = (socket: Duplex, status: number) => {
-  socket.end(
-    `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\n\r\n`
-  );
 };
 
 /**
@@ -135,6 +157,10 @@ export const createPanelServer = ({
     }
 
     if (!hasSession(req)) {
+      if (shouldReload(req)) {
+        reloadSameSite(res);
+        return;
+      }
       sendText(
         res,
         401,
@@ -158,13 +184,13 @@ export const createPanelServer = ({
     const verdict = verdictFor(req, true);
     if (!verdict.ok) {
       log(`Rejected upgrade ${req.url}: ${verdict.reason}`);
-      rejectUpgrade(socket, verdict.status);
+      refuseUpgrade(socket, verdict.status);
     } else if (!hasSession(req)) {
-      rejectUpgrade(socket, 401);
+      refuseUpgrade(socket, 401);
     } else if (app.upgrade) {
       app.upgrade(req, socket, head);
     } else {
-      rejectUpgrade(socket, 404);
+      refuseUpgrade(socket, 404);
     }
   });
 

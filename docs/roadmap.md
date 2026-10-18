@@ -34,6 +34,8 @@ Replaces `sbx ls` and a notepad.
 
 Stable URLs instead of ephemeral host ports.
 
+**Status: built, not yet tried against a real `sbx`.**
+
 - Configurable listeners, each mapping to an ordered list of candidate container ports.
 - Hostname routing by configurable suffixes (longest match wins), HTTP/HTTPS sniffing, WebSocket pass-through, HSTS stripping.
 - Each sandbox has several URLs: one per suffix × listener port, each `https` or `wss` (e.g. livereload).
