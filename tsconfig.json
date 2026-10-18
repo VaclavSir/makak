@@ -2,7 +2,9 @@
   "extends": "$app/tsconfig",
   "compilerOptions": {
     "strict": true,
-    "types": ["$app/types", "node"]
+    "types": ["$app/types", "node"],
+    "erasableSyntaxOnly": true,
+    "noUncheckedIndexedAccess": true
   },
   "include": ["src", "vite.config.ts"]
 }

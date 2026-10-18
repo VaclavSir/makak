@@ -1,0 +1,48 @@
+# Configuration
+
+The Panel reads `~/.makak/config.json`, or the file given with `makak start --config <path>`. The file is optional; every setting has a default. Paths may start with `~/`, and must otherwise be absolute.
+
+A full example, with the defaults where there are any:
+
+```json
+{
+  "panel": {
+    "hostname": "makakctl.test",
+    "port": 7443,
+    "tls": {
+      "cert": "~/.makak/tls/panel.pem",
+      "key": "~/.makak/tls/panel-key.pem"
+    }
+  },
+  "proxy": {
+    "suffixes": [".makak.test"],
+    "listeners": [
+      { "port": 443, "upstream": [443, 8000] },
+      { "port": 35729, "upstream": [35729] }
+    ]
+  },
+  "envDir": "~/makak/envs",
+  "handoffsDir": "~/makak/handoffs"
+}
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `panel.hostname` | `makakctl.test` | The Panel's own hostname. |
+| `panel.port` | `7443` | The Panel's port, bound on `127.0.0.1` only. |
+| `panel.tls.cert`, `panel.tls.key` | `~/.makak/tls/panel.pem`, `~/.makak/tls/panel-key.pem` | Certificate for `panel.hostname`; see [setup](setup.md). |
+| `proxy.suffixes` | `[".makak.test"]` | Hostname suffixes for sandbox URLs: `feature-a.makak.test`. |
+| `proxy.listeners` | `[]` | Ports the reverse proxy listens on, each with the container ports to try, in order. |
+| `envDir` | `~/makak/envs` | The env directory: the sandbox env files to choose from. |
+| `handoffsDir` | `~/makak/handoffs` | Where each sandbox's handoff directory lives. |
+
+The reverse proxy, env directory and handoffs are not implemented yet; their settings are validated now so the file format is stable.
+
+## Validation
+
+`makak start` refuses to start on an invalid file, and lists every problem. Beyond types and ranges, it checks that:
+
+- **The Panel is on its own domain.** `panel.hostname` must not be under any sandbox suffix, nor share its last two labels with one. A sandbox must never be able to share a site with the Panel. The two-label rule is a simple stand-in for the public suffix list, enough for `.test` and ordinary company domains.
+- **The Panel hostname is a real name.** At least two labels, lower case, and not an IP address or `localhost`.
+- **Ports don't collide.** No two listeners, and no listener and the Panel, share a port.
+- **There are no unknown keys**, so a typo fails instead of being ignored.

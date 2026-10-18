@@ -16,14 +16,14 @@ The Panel is reachable only from the machine it runs on.
 
 ## Development
 
-Requires Node.js 22.18 or newer and pnpm.
+Requires Node.js 22.18 or newer, pnpm, and a one-time setup of the Panel's hostname and certificate: see [docs/setup.md](docs/setup.md).
 
 ```sh
 pnpm install
-pnpm dev
+pnpm dev --fake   # without sbx
 ```
 
-See [AGENTS.md](AGENTS.md) for the other commands and the ground rules.
+See [AGENTS.md](AGENTS.md) for the other commands and the ground rules, and [docs/architecture.md](docs/architecture.md) for how it fits together.
 
 ## Status
 
