@@ -10,6 +10,7 @@ import { createAuth, LOGIN_PATH } from "../server/auth.ts";
 import { loadConfig } from "../server/config.ts";
 import type { Config } from "../server/config.ts";
 import { setPanelContext } from "../server/context.ts";
+import { createLifecycle } from "../server/lifecycle.ts";
 import { createPanelServer, panelOrigin } from "../server/panel.ts";
 import type { PanelApp } from "../server/panel.ts";
 import { createProxyServer } from "../server/proxy/proxy.ts";
@@ -197,11 +198,18 @@ export const start = async (options: StartOptions): Promise<void> => {
   const tools = options.fake ? createFakeTools() : createTools();
   const auth = createAuth();
   const sandboxes = createSandboxes(tools.sbx);
+  const store = createSandboxStore(config.stateDir);
 
   setPanelContext({
     config,
+    lifecycle: createLifecycle({
+      envDir: config.envDir,
+      sandboxes,
+      sbx: tools.sbx,
+      store,
+    }),
     sandboxes,
-    store: createSandboxStore(config.stateDir),
+    store,
     tools,
   });
   await reportTools(tools);

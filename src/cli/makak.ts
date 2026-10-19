@@ -8,7 +8,7 @@ const USAGE = `Usage: makak start [options]
 Starts the Makak Panel and opens it in the browser.
 
 Options:
-  --config <path>  Config file (default: ~/.makak/config.json)
+  --config <path>  Config file (default: ~/makak/config.json)
   --dev            Serve the app through Vite, with hot reload
   --fake           Use fake sbx and git, for development without them
   --no-open        Print the login link instead of opening the browser

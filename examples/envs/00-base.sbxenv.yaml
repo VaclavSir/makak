@@ -1,0 +1,28 @@
+# The base of every sandbox: the agent, and the project it works on, as a
+# private clone. The Panel checks files starting with 00- by default.
+# See docs/env-files.md.
+schemaVersion: "1"
+
+args:
+  sandbox:
+    required: true
+    description: The sandbox name. The Panel fills it in from the name you give.
+  agent:
+    default: claude
+    description: The agent to run
+    enum: [claude, codex, copilot, cursor, gemini, opencode, shell]
+  project:
+    required: true
+    description: Absolute path of the project to work on
+    pattern: "/.+"
+
+agent: ${{ env.args.agent }}
+
+# A clone, not the project itself: the agent's commits stay in the sandbox
+# until you fetch them.
+workspace:
+  path: ${{ env.args.project }}
+  clone: true
+
+env:
+  MAKAK_SANDBOX: ${{ env.args.sandbox }}

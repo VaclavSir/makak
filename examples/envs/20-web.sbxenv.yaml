@@ -1,0 +1,12 @@
+# A web project: publishes the dev server and livereload ports, so the Panel's
+# reverse proxy can serve them at the sandbox's own hostname. No host port is
+# given, so sbx picks a free one; the proxy finds it.
+args:
+  dev_port:
+    default: "8000"
+    description: The port the dev server listens on inside the sandbox
+    pattern: "[1-9][0-9]{0,4}"
+
+ports:
+  - sandbox: ${{ env.args.dev_port }}
+  - sandbox: 35729

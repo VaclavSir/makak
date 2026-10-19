@@ -8,7 +8,17 @@ import * as z from "zod";
 
 export const MAX_NOTES_LENGTH = 10_000;
 
+/** How the Panel created a sandbox, replayed for every `sbx env` command. */
+const envSchema = z.object({
+  args: z.record(z.string(), z.string()),
+  createdAt: z.string(),
+  files: z.array(z.string()).min(1),
+  name: z.string().min(1),
+});
+
 const recordSchema = z.object({
+  /** Set when the Panel created the sandbox: it is managed. */
+  env: envSchema.optional(),
   notes: z.string().max(MAX_NOTES_LENGTH).default(""),
 });
 
@@ -18,10 +28,16 @@ const fileSchema = z.object({
 
 type StateFile = z.output<typeof fileSchema>;
 export type SandboxRecord = z.output<typeof recordSchema>;
+export type EnvRecord = z.output<typeof envSchema>;
 
 export interface SandboxStore {
   get: (id: string) => Promise<SandboxRecord>;
+  /** Every record, by sandbox id, including those of removed sandboxes. */
+  list: () => Promise<Record<string, SandboxRecord>>;
   setNotes: (id: string, notes: string) => Promise<void>;
+  setEnv: (id: string, env: EnvRecord) => Promise<void>;
+  /** Deletes the record, notes included. */
+  forget: (id: string) => Promise<void>;
 }
 
 export class StateError extends Error {
@@ -103,10 +119,24 @@ export const createSandboxStore = (stateDir: string): SandboxStore => {
   };
 
   return {
+    forget: (id) =>
+      update((state) => {
+        state.sandboxes = Object.fromEntries(
+          Object.entries(state.sandboxes).filter(([key]) => key !== id)
+        );
+      }),
     get: async (id) => {
       const state = await read();
       return state.sandboxes[id] ?? { ...EMPTY_RECORD };
     },
+    list: async () => {
+      const state = await read();
+      return state.sandboxes;
+    },
+    setEnv: (id, env) =>
+      update((state) => {
+        state.sandboxes[id] = { ...EMPTY_RECORD, ...state.sandboxes[id], env };
+      }),
     setNotes: (id, notes) => {
       if (notes.length > MAX_NOTES_LENGTH) {
         return Promise.reject(

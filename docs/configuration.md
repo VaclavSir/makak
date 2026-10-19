@@ -1,6 +1,17 @@
 # Configuration
 
-The Panel reads `~/.makak/config.json`, or the file given with `makak start --config <path>`. The file is optional; every setting has a default. Paths may start with `~/`, and must otherwise be absolute.
+The Panel reads `~/makak/config.json`, or the file given with `makak start --config <path>`. The file is optional; every setting has a default. Paths may start with `~/`, and must otherwise be absolute.
+
+By default everything the Panel reads and writes lives in one visible directory:
+
+```text
+~/makak/
+├── config.json   this file
+├── envs/         env files to create sandboxes from; see env files
+├── handoffs/     one directory per sandbox
+├── state/        the Panel's own data: notes, how each sandbox was created
+└── tls/          certificates for the Panel and the reverse proxy
+```
 
 A full example, with the defaults where there are any:
 
@@ -10,8 +21,8 @@ A full example, with the defaults where there are any:
     "hostname": "makakctl.test",
     "port": 7443,
     "tls": {
-      "cert": "~/.makak/tls/panel.pem",
-      "key": "~/.makak/tls/panel-key.pem"
+      "cert": "~/makak/tls/panel.pem",
+      "key": "~/makak/tls/panel-key.pem"
     }
   },
   "proxy": {
@@ -25,14 +36,14 @@ A full example, with the defaults where there are any:
       { "sandbox": "^client-", "port": 35729 }
     ],
     "tls": {
-      "cert": "~/.makak/tls/sandboxes.pem",
-      "key": "~/.makak/tls/sandboxes-key.pem"
+      "cert": "~/makak/tls/sandboxes.pem",
+      "key": "~/makak/tls/sandboxes-key.pem"
     }
   },
   "envDir": "~/makak/envs",
   "handoffsDir": "~/makak/handoffs",
   "ssh": { "hostSuffix": ".sbx" },
-  "stateDir": "~/.makak/state"
+  "stateDir": "~/makak/state"
 }
 ```
 
@@ -40,7 +51,7 @@ A full example, with the defaults where there are any:
 | --- | --- | --- |
 | `panel.hostname` | `makakctl.test` | The Panel's own hostname. |
 | `panel.port` | `7443` | The Panel's port, bound on `127.0.0.1` only. |
-| `panel.tls.cert`, `panel.tls.key` | `~/.makak/tls/panel.pem`, `~/.makak/tls/panel-key.pem` | Certificate for `panel.hostname`; see [setup](setup.md). |
+| `panel.tls.cert`, `panel.tls.key` | `~/makak/tls/panel.pem`, `~/makak/tls/panel-key.pem` | Certificate for `panel.hostname`; see [setup](setup.md). |
 | `proxy.suffixes` | `[".makak.test"]` | Hostname suffixes for sandbox addresses: `feature-a.makak.test`. Each sandbox gets an address under every suffix. |
 | `proxy.listeners` | `[]` | Ports the reverse proxy listens on. None means the proxy is off. |
 | `proxy.listeners[].port` |  | The port in the address, e.g. `443` for `https://feature-a.makak.test/`. |
@@ -49,13 +60,13 @@ A full example, with the defaults where there are any:
 | `proxy.elevate` | `[]` | Sandbox ports served over TLS although the server inside speaks plain HTTP; see [elevation](#elevation). |
 | `proxy.elevate[].sandbox` |  | A regular expression for the sandbox names the rule applies to, e.g. `^client-`. Unanchored, like any regular expression: `client` matches `my-client-2`. |
 | `proxy.elevate[].port` | every port | The sandbox port, after the listener's `upstream` list is resolved: `8000`, not the `443` in the address. Must be in some listener's `upstream` list. Leave it out only for sandboxes with no HTTPS servers of their own. |
-| `proxy.tls.cert`, `proxy.tls.key` | `~/.makak/tls/sandboxes.pem`, `~/.makak/tls/sandboxes-key.pem` | Wildcard certificate for every suffix; see [setup](setup.md#reverse-proxy). Read only when there are listeners. |
-| `envDir` | `~/makak/envs` | The env directory: the sandbox env files to choose from. |
+| `proxy.tls.cert`, `proxy.tls.key` | `~/makak/tls/sandboxes.pem`, `~/makak/tls/sandboxes-key.pem` | Wildcard certificate for every suffix; see [setup](setup.md#reverse-proxy). Read only when there are listeners. |
+| `envDir` | `~/makak/envs` | The env directory: the `*.sbxenv.yaml` files to create sandboxes from; see [env files](env-files.md). |
 | `handoffsDir` | `~/makak/handoffs` | Where each sandbox's handoff directory lives. |
 | `ssh.hostSuffix` | `.sbx` | The suffix of the SSH host pattern `sbx setup ssh` wrote (`*.sbx` unless you passed `--alias`). The Panel shows `<sandbox>.sbx` as the SSH host. |
-| `stateDir` | `~/.makak/state` | Where the Panel keeps its own data, such as sandbox notes. |
+| `stateDir` | `~/makak/state` | Where the Panel keeps its own data: sandbox notes, and the env files and args each sandbox was created with. |
 
-The env directory and handoffs are not implemented yet; their settings are validated now so the file format is stable.
+Handoffs are not implemented yet; the setting is validated now so the file format is stable.
 
 ### Listener ports
 

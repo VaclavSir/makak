@@ -4,6 +4,7 @@
   import CopyField from "#lib/components/copy-field.svelte";
   import NotesForm from "#lib/components/notes-form.svelte";
   import ProxyAddresses from "#lib/components/proxy-addresses.svelte";
+  import SandboxActions from "#lib/components/sandbox-actions.svelte";
   import StatusDot from "#lib/components/status-dot.svelte";
   import { SANDBOX_PAGE } from "#lib/dependencies.ts";
   import { formatTime } from "#lib/format.ts";
@@ -37,11 +38,19 @@
       ><StatusDot status={sandbox.status} />{sandbox.status}</span
     >
   {/if}
-  <span
-    class="badge"
-    title="Not created by the Panel, so the Panel doesn't know how it was configured."
-    >unmanaged</span
-  >
+  {#if data.env === undefined}
+    <span
+      class="badge"
+      title="Not created by the Panel, so the Panel doesn't know how it was configured."
+      >unmanaged</span
+    >
+  {:else}
+    <span
+      class="badge"
+      title="Created by the Panel, which replays its env files and args."
+      >managed</span
+    >
+  {/if}
 </header>
 
 {#if replaced}
@@ -57,6 +66,34 @@
 {:else if sandbox === undefined}
   <p class="error">This sandbox no longer exists.</p>
 {:else}
+  {#key data.sandbox.id}
+    <SandboxActions
+      envProblem={data.envProblem}
+      id={data.sandbox.id}
+      managed={data.env !== undefined}
+      name={data.sandbox.name}
+      removal={data.removal}
+      status={sandbox.status}
+    />
+  {/key}
+
+  {#if data.envProblem !== undefined}
+    <p class="error">
+      {data.envProblem}. Until they are back, the Panel starts it with
+      <code>sbx run</code> and removes it with <code>sbx rm</code>.
+    </p>
+  {/if}
+
+  {#if data.warnings.length > 0}
+    <h2>Workflow warnings</h2>
+    <ul class="warnings">
+      {#each data.warnings as warning (warning)}
+        <li>{warning}</li>
+      {/each}
+    </ul>
+  {/if}
+
+  <h2>Details</h2>
   <dl>
     <dt>Agent</dt>
     <dd>{sandbox.agent ?? "unknown"}</dd>
@@ -67,6 +104,28 @@
     <dt>Id</dt>
     <dd><code>{sandbox.id}</code></dd>
   </dl>
+
+  {#if data.env !== undefined}
+    <h2>Env</h2>
+    <p class="muted">
+      Replayed for every <code>sbx env</code> command, in this order.
+    </p>
+    <ul class="plain">
+      {#each data.env.files as file (file)}
+        <li><code>{file}</code></li>
+      {/each}
+    </ul>
+    {#if Object.keys(data.env.args).length > 0}
+      <table>
+        <thead><tr><th>Arg</th><th>Value</th></tr></thead>
+        <tbody>
+          {#each Object.entries(data.env.args) as [arg, value] (arg)}
+            <tr><td>{arg}</td><td><code>{value}</code></td></tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  {/if}
 
   <h2>Workspaces</h2>
   {#if sandbox.workspaces.length === 0}
@@ -135,7 +194,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   .status {
@@ -168,6 +227,12 @@
   dd {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+
+  .warnings {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--warning-text);
   }
 
   .plain {

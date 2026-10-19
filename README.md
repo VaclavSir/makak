@@ -23,6 +23,8 @@ pnpm install
 pnpm dev --fake   # without sbx
 ```
 
+To create sandboxes from the Panel, put env files in `~/makak/envs`: see [docs/env-files.md](docs/env-files.md).
+
 See [AGENTS.md](AGENTS.md) for the other commands and the ground rules, and [docs/architecture.md](docs/architecture.md) for how it fits together.
 
 ## Status

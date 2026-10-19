@@ -70,7 +70,20 @@ SvelteKit's server code is bundled separately (or, in dev, loaded by Vite), so i
 
 The sandbox list comes from `sbx ls --json`, which includes the published ports. Its format is undocumented, so the parser (`src/server/tools/sbx.ts`) requires only the name, id and status, and ignores fields it doesn't know. A listing is shared by concurrent requests and reused for two seconds, because every open tab polls it every five.
 
-What the Panel knows that `sbx` doesn't, such as notes, lives in `<stateDir>/sandboxes.json`, keyed by sandbox id rather than name: a name can be reused by an unrelated sandbox after `sbx rm`. The file is written whole, through a rename, and never overwritten when it can't be parsed.
+What the Panel knows that `sbx` doesn't, such as notes and how it created a sandbox, lives in `<stateDir>/sandboxes.json`, keyed by sandbox id rather than name: a name can be reused by an unrelated sandbox after `sbx rm`. The file is written whole, through a rename, and never overwritten when it can't be parsed.
+
+## Sandbox lifecycle
+
+`src/server/lifecycle.ts` creates, starts, stops and removes sandboxes; `src/server/envs.ts` reads the env directory. How it looks to the user is in [env files](env-files.md).
+
+- **Plan, then apply.** Every change that applies env files runs `sbx env plan` first and shows it. The approval carries a SHA-256 hash of each file as planned, and the Panel refuses to apply, with `--force`, files that no longer match. The plan is not kept on the server: the form carries the request and the hashes, and the server checks everything again on apply.
+- **The record.** After `sbx env run` creates a sandbox, the Panel looks up its id and records the absolute file paths and args under it. A sandbox `sbx` created before failing is recorded too, so it can be removed with its env. A managed sandbox's record outlives it, so it can be created again; _Forget_ deletes the record. Removing an unmanaged sandbox deletes its notes, and the confirmation lists them.
+- **Identity.** Every action names the sandbox's id as the page saw it, and is refused when the name now belongs to another sandbox.
+- **One change at a time** per sandbox name, so a double click can't run two creates, or a stop in the middle of a remove.
+- **Removal** needs the name typed in. Until git mirroring exists, the confirmation can't tell whether the sandbox holds unique commits, so it says to assume it does. A managed sandbox is removed with `sbx env rm` and its recorded files, and the confirmation lists the `preRemove` host commands that run; when the files are gone, `sbx rm` is used and the confirmation says so.
+- **Warnings** are derived from the merged env files, with arg references substituted. They are shown and never enforced.
+
+Commands that create or start sandboxes run for minutes, and the request waits for them. They are not long-running processes the Panel owns: `sbx env run --detach` returns once the sandbox runs.
 
 ## Reverse proxy
 

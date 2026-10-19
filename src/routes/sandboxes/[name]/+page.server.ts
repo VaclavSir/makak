@@ -1,7 +1,14 @@
-import { error as httpError, fail } from "@sveltejs/kit";
+import { error as httpError, fail, redirect } from "@sveltejs/kit";
 
 import { SANDBOX_PAGE } from "#lib/dependencies.ts";
+import {
+  attempt,
+  hashesSchema,
+  INCOMPLETE,
+  jsonField,
+} from "#lib/server/actions.ts";
 import { getPanelContext } from "#server/context.ts";
+import type { Inspection, Target } from "#server/lifecycle.ts";
 import { isStateError, MAX_NOTES_LENGTH } from "#server/state.ts";
 import type { Sandbox } from "#server/tools/index.ts";
 
@@ -24,11 +31,11 @@ const findSandbox = async (name: string) => {
 // typed. The page takes live status from the layout's list instead.
 export const load: PageServerLoad = async ({ depends, params }) => {
   depends(SANDBOX_PAGE);
-  const { config, store } = getPanelContext();
+  const { config, lifecycle } = getPanelContext();
   const sandbox = await findSandbox(params.name);
-  let notes: string;
+  let inspection: Inspection;
   try {
-    ({ notes } = await store.get(sandbox.id));
+    inspection = await lifecycle.inspect(sandbox);
   } catch (error) {
     if (isStateError(error)) {
       httpError(500, error.message);
@@ -37,13 +44,23 @@ export const load: PageServerLoad = async ({ depends, params }) => {
   }
   const { elevate, listeners, suffixes } = config.proxy;
   return {
+    ...inspection,
     maxNotesLength: MAX_NOTES_LENGTH,
-    notes,
     proxy: { elevate, listeners, suffixes },
     sandbox,
     sshSuffix: config.ssh.hostSuffix,
   };
 };
+
+/** The sandbox a form was submitted for: its name, and the id the page showed. */
+const targetOf = (form: FormData, name: string): Target | undefined => {
+  const id = form.get("id");
+  return typeof id === "string" ? { id, name } : undefined;
+};
+
+/** Hashes as the page saw the env files; none when it used no plan. */
+const hashesOf = (form: FormData) =>
+  jsonField(hashesSchema, form.get("hashes") ?? "[]");
 
 export const actions: Actions = {
   notes: async ({ params, request }) => {
@@ -78,5 +95,65 @@ export const actions: Actions = {
       throw error;
     }
     return { saved: true };
+  },
+
+  planStart: async ({ params, request }) => {
+    const target = targetOf(await request.formData(), params.name);
+    if (target === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().lifecycle.planStart(target)
+    );
+    if (!result.ok) {
+      return result.failure;
+    }
+    const { hashes, output, warnings } = result.value;
+    return { plan: { hashes, output, warnings } };
+  },
+
+  remove: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = targetOf(form, params.name);
+    const hashes = hashesOf(form);
+    const confirmation = form.get("confirmation");
+    if (
+      target === undefined ||
+      hashes === undefined ||
+      typeof confirmation !== "string"
+    ) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().lifecycle.remove(target, confirmation.trim(), hashes)
+    );
+    if (!result.ok) {
+      return result.failure;
+    }
+    redirect(303, "/");
+  },
+
+  start: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = targetOf(form, params.name);
+    const hashes = hashesOf(form);
+    if (target === undefined || hashes === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().lifecycle.start(target, hashes)
+    );
+    return result.ok ? { started: true } : result.failure;
+  },
+
+  stop: async ({ params, request }) => {
+    const target = targetOf(await request.formData(), params.name);
+    if (target === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().lifecycle.stop(target)
+    );
+    return result.ok ? { stopped: true } : result.failure;
   },
 };

@@ -1,0 +1,14 @@
+# Limits for a sandbox that builds something big.
+args:
+  cpus:
+    default: "4"
+    description: Number of CPUs; 0 for all of them
+    pattern: "[0-9]+"
+  memory:
+    default: 8g
+    description: Memory limit
+    enum: [4g, 8g, 16g]
+
+sandboxOptions:
+  cpus: ${{ env.args.cpus }}
+  memory: ${{ env.args.memory }}

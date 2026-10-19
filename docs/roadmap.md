@@ -50,11 +50,13 @@ Stable URLs instead of ephemeral host ports.
 
 Create sandboxes from the Panel, reproducibly.
 
+**Status: done.** Checked against a real `sbx` on 2026-10-20. See [env files](env-files.md).
+
 - Env directory discovery, with the create form generated from the env files' `args:` declarations.
 - `sbx env plan` shown before applying.
 - The exact file set and args recorded and replayed for start, stop and remove.
 - Creating a sandbox from an existing sandbox's config.
-- Passive warnings for workflow deviations: writable extra mounts, forge not denied, dynamic MCP.
+- Passive warnings for workflow deviations: writable extra mounts, a workspace that isn't a clone.
 
 **Done when:** a sandbox can be created, stopped, started and removed entirely from the Panel, and recreated identically later.
 
@@ -88,12 +90,14 @@ The only gate on the MCP channel.
 - Global approval queue: readable payloads, **allow once** / **always allow**, the requesting sandbox named, and a notification while anything is pending.
 - Audit log of all calls.
 - Per-sandbox registration through env files, with tokens kept in sbx secrets.
+- Static MCP: `--static-mcp` can't be set from env files, so find another way to apply it, or warn about sandboxes without it.
 - Experiment, done first: confirm the sbx gateway forwards progress notifications. This decides how holds work.
 
 **Done when:** a mutating GitLab tool call from a sandbox waits for approval in the Panel, and read-only calls go straight through.
 
 ## 7. Cleanup and hardening
 
+- Warning for sandboxes that can reach the forge, read from `sbx policy ls`.
 - Complete teardown: env, per-sandbox MCP registrations and their secrets.
 - Orphan sweep on start and on demand, reporting config residue and unremoved work separately.
 - Handoff directories: per-sandbox creation, preview, and copying between sandboxes.

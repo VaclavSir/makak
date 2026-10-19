@@ -25,8 +25,8 @@ The session cookie is `Secure`, so the Panel is HTTPS-only:
 
 ```sh
 mkcert -install
-mkdir -p ~/.makak/tls
-mkcert -cert-file ~/.makak/tls/panel.pem -key-file ~/.makak/tls/panel-key.pem makakctl.test
+mkdir -p ~/makak/tls
+mkcert -cert-file ~/makak/tls/panel.pem -key-file ~/makak/tls/panel-key.pem makakctl.test
 ```
 
 ## 3. Install and start
@@ -68,7 +68,7 @@ For another suffix, add one more `address=` line and one more resolver file, nam
 One wildcard certificate covers every suffix. A wildcard matches one label, which is why sandbox addresses are exactly one label under the suffix:
 
 ```sh
-mkcert -cert-file ~/.makak/tls/sandboxes.pem -key-file ~/.makak/tls/sandboxes-key.pem "*.makak.test"
+mkcert -cert-file ~/makak/tls/sandboxes.pem -key-file ~/makak/tls/sandboxes-key.pem "*.makak.test"
 ```
 
 List every suffix, as `"*.makak.test" "*.client.test"`, and create the certificate again whenever you add one.

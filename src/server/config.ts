@@ -6,11 +6,7 @@ import * as z from "zod";
 
 import { DNS_LABEL, sandboxPattern } from "../lib/proxy-urls.ts";
 
-export const DEFAULT_CONFIG_PATH = path.join(
-  homedir(),
-  ".makak",
-  "config.json"
-);
+export const DEFAULT_CONFIG_PATH = path.join(homedir(), "makak", "config.json");
 
 // At least two labels, and an alphabetic last label, which rules out IP literals and `localhost`.
 const HOSTNAME = new RegExp(
@@ -66,8 +62,8 @@ const configSchema = z
         port: port.default(7443),
         tls: z
           .strictObject({
-            cert: hostPath.prefault("~/.makak/tls/panel.pem"),
-            key: hostPath.prefault("~/.makak/tls/panel-key.pem"),
+            cert: hostPath.prefault("~/makak/tls/panel.pem"),
+            key: hostPath.prefault("~/makak/tls/panel-key.pem"),
           })
           .prefault({}),
       })
@@ -99,8 +95,8 @@ const configSchema = z
           .default([".makak.test"]),
         tls: z
           .strictObject({
-            cert: hostPath.prefault("~/.makak/tls/sandboxes.pem"),
-            key: hostPath.prefault("~/.makak/tls/sandboxes-key.pem"),
+            cert: hostPath.prefault("~/makak/tls/sandboxes.pem"),
+            key: hostPath.prefault("~/makak/tls/sandboxes-key.pem"),
           })
           .prefault({}),
       })
@@ -113,7 +109,7 @@ const configSchema = z
           .default(".sbx"),
       })
       .prefault({}),
-    stateDir: hostPath.prefault("~/.makak/state"),
+    stateDir: hostPath.prefault("~/makak/state"),
   })
   .superRefine((config, ctx) => {
     const { hostname } = config.panel;

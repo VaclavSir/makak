@@ -11,6 +11,17 @@ export interface PublishedPort {
   sandboxPort: number;
 }
 
+/**
+ * What `sbx env` runs with: absolute env file paths, merged in order, the
+ * sandbox name and the arg values. The Panel records it and replays it, since
+ * `sbx env` needs the same values to find the same sandbox again.
+ */
+export interface EnvSpec {
+  args: Record<string, string>;
+  files: string[];
+  name: string;
+}
+
 /** A sandbox as `sbx ls --json` reports it. */
 export interface Sandbox {
   agent: string | undefined;

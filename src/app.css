@@ -12,6 +12,7 @@
   --stopped: #8a8580;
   --error-bg: #fbeae5;
   --error-text: #8c2f17;
+  --warning-text: #8a5a00;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -30,6 +31,7 @@
     --stopped: #7d7872;
     --error-bg: #3a1e16;
     --error-text: #f2b39b;
+    --warning-text: #e6b450;
   }
 }
 
@@ -69,9 +71,19 @@ h2 {
 }
 
 button,
+input,
+select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+input,
+select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 0.3rem 0.5rem;
 }
 
 button {
@@ -84,6 +96,22 @@ button {
 
 button:hover {
   border-color: var(--muted);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+}
+
+button.danger {
+  border-color: var(--error-text);
+  color: var(--error-text);
 }
 
 .error {

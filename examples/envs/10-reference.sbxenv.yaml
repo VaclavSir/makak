@@ -1,0 +1,11 @@
+# Another project the agent may read but not change. Additional workspaces are
+# mounted directly, even when the main one is a clone, so it must be read-only.
+args:
+  reference:
+    required: true
+    description: Absolute path of a project to mount read-only
+    pattern: "/.+"
+
+additionalWorkspaces:
+  - path: ${{ env.args.reference }}
+    readOnly: true

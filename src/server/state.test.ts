@@ -93,6 +93,36 @@ describe(createSandboxStore, () => {
     await writeFile(file, '{"sandboxes": {"a": {"notes": "back"}}}');
     await expect(store.get("a")).resolves.toStrictEqual({ notes: "back" });
   });
+
+  describe("env records", () => {
+    const env = {
+      args: { project: "/p", sandbox: "feature-a" },
+      createdAt: "2026-10-19T08:00:00.000Z",
+      files: ["/envs/00-base.sbxenv.yaml"],
+      name: "feature-a",
+    };
+
+    it("records how a sandbox was created, keeping its notes", async () => {
+      const store = createSandboxStore(stateDir());
+      await store.setNotes("a", "notes");
+      await store.setEnv("a", env);
+
+      await expect(
+        createSandboxStore(stateDir()).get("a")
+      ).resolves.toStrictEqual({ env, notes: "notes" });
+    });
+
+    it("lists every record and forgets one", async () => {
+      const store = createSandboxStore(stateDir());
+      await store.setEnv("a", env);
+      await store.setNotes("b", "other");
+      await store.forget("a");
+
+      await expect(store.list()).resolves.toStrictEqual({
+        b: { notes: "other" },
+      });
+    });
+  });
 });
 
 describe(isStateError, () => {

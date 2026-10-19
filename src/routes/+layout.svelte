@@ -38,6 +38,12 @@
   <nav>
     <a class="home" href={resolve("/")}>Makak Panel</a>
     <h2>Sandboxes</h2>
+    <a
+      class="new"
+      href={resolve("/new")}
+      aria-current={page.route.id === "/new" ? "page" : undefined}
+      >+ New sandbox</a
+    >
     {#if data.sandboxes === undefined}
       <p class="error">{data.sbxError}</p>
     {:else if data.sandboxes.length === 0}
@@ -98,6 +104,20 @@
     font-size: 0.75rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
+  }
+
+  .new {
+    display: block;
+    margin-bottom: 0.5rem;
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .new:hover,
+  .new[aria-current="page"] {
+    background: var(--selected);
   }
 
   ul {

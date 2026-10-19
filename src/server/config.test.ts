@@ -14,8 +14,8 @@ describe(parseConfig, () => {
       hostname: "makakctl.test",
       port: 7443,
       tls: {
-        cert: path.join(homedir(), ".makak/tls/panel.pem"),
-        key: path.join(homedir(), ".makak/tls/panel-key.pem"),
+        cert: path.join(homedir(), "makak/tls/panel.pem"),
+        key: path.join(homedir(), "makak/tls/panel-key.pem"),
       },
     });
     expect(config.proxy).toStrictEqual({
@@ -23,8 +23,8 @@ describe(parseConfig, () => {
       listeners: [],
       suffixes: [".makak.test"],
       tls: {
-        cert: path.join(homedir(), ".makak/tls/sandboxes.pem"),
-        key: path.join(homedir(), ".makak/tls/sandboxes-key.pem"),
+        cert: path.join(homedir(), "makak/tls/sandboxes.pem"),
+        key: path.join(homedir(), "makak/tls/sandboxes-key.pem"),
       },
     });
     expect(config.ssh).toStrictEqual({ hostSuffix: ".sbx" });
@@ -35,7 +35,7 @@ describe(parseConfig, () => {
     }).toStrictEqual({
       envDir: path.join(homedir(), "makak/envs"),
       handoffsDir: path.join(homedir(), "makak/handoffs"),
-      stateDir: path.join(homedir(), ".makak/state"),
+      stateDir: path.join(homedir(), "makak/state"),
     });
   });
 
