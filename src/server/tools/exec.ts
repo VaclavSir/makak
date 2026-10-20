@@ -9,6 +9,8 @@ export interface CommandResult {
 
 export interface ExecOptions {
   cwd?: string;
+  /** Added to the Panel's environment. */
+  env?: Record<string, string>;
   timeoutMs?: number;
 }
 
@@ -38,11 +40,16 @@ interface ExecFileError extends Error {
   stdout?: string;
 }
 
-export const exec: Exec = async (command, args, { cwd, timeoutMs } = {}) => {
+export const exec: Exec = async (
+  command,
+  args,
+  { cwd, env, timeoutMs } = {}
+) => {
   try {
     const { stderr, stdout } = await execFileAsync(command, args, {
       cwd,
       encoding: "utf-8",
+      env: env === undefined ? undefined : { ...process.env, ...env },
       maxBuffer: MAX_OUTPUT_BYTES,
       shell: false,
       timeout: timeoutMs,
@@ -87,3 +94,7 @@ export const execChecked = async (
   }
   return result.stdout;
 };
+
+/** The first line of a command's output, such as a version. */
+export const firstLine = (text: string): string =>
+  text.trim().split("\n")[0] ?? "";

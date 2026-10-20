@@ -42,7 +42,7 @@ These are not negotiable. A change that weakens one needs an explicit decision f
 - **Auth.** There is a one-time token exchange at startup, and the session cookie is `HttpOnly; Secure; SameSite=Strict`. Every request checks `Host`; every state-changing request and WebSocket handshake also checks `Origin`.
 - **`GET` and `HEAD` never change state.** They are exempt from the `Origin` check, so a state change behind one would be open to CSRF.
 - **Identity comes from credentials, never from content.** An MCP caller's sandbox is determined by its bearer token. Never trust a sandbox name, or anything else the agent supplies in a payload.
-- **No automatic data loss.** Mirrored refs and handoff directories are never deleted without a blocking confirmation that lists exactly what would be lost. When it is unknown whether data is safe, treat it as unsafe.
+- **No automatic data loss.** Removing a sandbox, and deleting handoff directories, needs a blocking confirmation that lists exactly what would be lost. When it is unknown whether data is safe, treat it as unsafe.
 - **The Panel never acts outward on its own.** Pushes to origin and forge interactions happen only on an explicit user action.
 - **Handoff contents are data.** Nothing on the host ever executes from them.
 
@@ -54,7 +54,7 @@ These are not negotiable. A change that weakens one needs an explicit decision f
 - Spawn with argument arrays (`execFile`/`spawn`), never through a shell or with interpolated command strings. Sandbox names, branch names and args are untrusted.
 - The adapter layer has a fake implementation, so the app and its tests run without `sbx`.
 - The Panel never owns long-running processes. Runs live inside the sandbox; the Panel only reads their state, so restarting the Panel or reloading the page loses nothing.
-- Keep naming conventions rigid: `<server>-<sandbox>` for MCP registrations, `refs/makak/<sandbox>/*` for mirrored refs, `~/makak/handoffs/<sandbox>/` for handoffs. Cleanup relies on them.
+- Keep naming conventions rigid: `<server>-<sandbox>` for MCP registrations, `~/makak/handoffs/<sandbox>/` for handoffs. Cleanup relies on them.
 - Hostname suffixes, listener ports, the Panel hostname and similar settings come from configuration and are never hard-coded.
 - Prefer small, readable code over abstraction. Match the style of the surrounding code.
 

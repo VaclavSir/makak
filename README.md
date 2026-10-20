@@ -6,7 +6,7 @@ One command, `makak start`, brings up a single process that provides:
 
 - **Sandbox management** - list, create, start, stop and remove sandboxes; notes, copyable terminal and SSH commands, links to the sandbox's apps.
 - **Runs** - non-interactive commands (`npm start`, `npm test`, …) and one-shot agent prompts, with streamed output, status and stop/rerun.
-- **Git mirroring** - sandbox branches continuously mirrored to the host, so no work ever exists only inside a sandbox.
+- **Git** - sandbox branches compared with the host and origin, brought to the host or pushed, even while the sandbox is stopped.
 - **Reverse proxy** - stable URLs for each sandbox, whatever host port `sbx` happened to publish. A sandbox can have several, one per configured suffix and listener port, served as `https` or `wss` (e.g. `https://feature-a.makak.test:8000`, `wss://feature-a.makak.test:35729`).
 - **MCP approval proxy** - wraps upstream MCP servers; allowlisted tools pass through, everything else waits for the user's approval in the Panel.
 

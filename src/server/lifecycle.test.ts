@@ -8,12 +8,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createLifecycle, isLifecycleError, userMessage } from "./lifecycle.ts";
 import type { CreateRequest, Lifecycle } from "./lifecycle.ts";
+import type { SandboxGit, Work } from "./sandbox-git.ts";
 import { createSandboxes } from "./sandboxes.ts";
 import { createSandboxStore } from "./state.ts";
 import type { SandboxStore } from "./state.ts";
 import { CommandError } from "./tools/exec.ts";
 import { createFakeSbx } from "./tools/index.ts";
-import type { EnvSpec, Sbx } from "./tools/index.ts";
+import type { EnvSpec, Sandbox, Sbx } from "./tools/index.ts";
 
 const BASE = `schemaVersion: "1"
 args:
@@ -71,8 +72,36 @@ const recordingSbx = () => {
   return { calls, sbx };
 };
 
+/** Records the sandboxes it syncs, and reports the given work. */
+const stubGit = () => {
+  const synced: string[] = [];
+  const state: { work: Work | undefined } = { work: undefined };
+  const git: Pick<SandboxGit, "status" | "sync"> = {
+    status: () =>
+      Promise.resolve(
+        state.work === undefined
+          ? undefined
+          : {
+              branches: [],
+              error: undefined,
+              hasOrigin: false,
+              repo: "/r",
+              work: state.work,
+            }
+      ),
+    sync: ({ name }) => {
+      synced.push(name);
+      return Promise.resolve();
+    },
+  };
+  return { git, state, synced };
+};
+
+const commit = (sha: string) => ({ sha, subject: `Commit ${sha}` });
+
 describe(createLifecycle, () => {
   let dir: string;
+  let sandboxGit: ReturnType<typeof stubGit>;
   let envDir: string;
   let calls: Call[];
   let sbx: Sbx;
@@ -89,6 +118,15 @@ describe(createLifecycle, () => {
 
   const changes = () => calls.filter(([what]) => what !== "envPlan");
 
+  const existing = async (name: string): Promise<Sandbox> => {
+    const sandboxes = await sbx.list();
+    const found = sandboxes.find((sandbox) => sandbox.name === name);
+    if (found === undefined) {
+      throw new Error(`No fake sandbox ${name}`);
+    }
+    return found;
+  };
+
   const created = async (createRequest = request) => {
     const { hashes } = await lifecycle.planCreate(createRequest);
     return lifecycle.create(createRequest, hashes);
@@ -102,9 +140,11 @@ describe(createLifecycle, () => {
     await writeFile(docsPath(), DOCS);
     ({ calls, sbx } = recordingSbx());
     store = createSandboxStore(path.join(dir, "state"));
+    sandboxGit = stubGit();
     lifecycle = createLifecycle({
       envDir,
       now: () => new Date("2026-10-19T08:00:00.000Z"),
+      sandboxGit: sandboxGit.git,
       sandboxes: createSandboxes(sbx),
       sbx,
       store,
@@ -276,6 +316,7 @@ describe(createLifecycle, () => {
       const { hashes } = await lifecycle.planCreate(request);
       lifecycle = createLifecycle({
         envDir,
+        sandboxGit: sandboxGit.git,
         sandboxes: createSandboxes(failing),
         sbx: failing,
         store,
@@ -295,7 +336,13 @@ describe(createLifecycle, () => {
         },
       };
       const sandboxes = createSandboxes(failing);
-      lifecycle = createLifecycle({ envDir, sandboxes, sbx: failing, store });
+      lifecycle = createLifecycle({
+        envDir,
+        sandboxGit: sandboxGit.git,
+        sandboxes,
+        sbx: failing,
+        store,
+      });
 
       const { hashes } = await lifecycle.planCreate(request);
       await expect(lifecycle.create(request, hashes)).rejects.toThrow(
@@ -369,6 +416,41 @@ describe(createLifecycle, () => {
         id: "00000000-0000-4000-8000-000000000002",
         name: "feature-a",
       });
+      expect(changes()).toStrictEqual([["stop", "feature-a"]]);
+    });
+
+    it("copies the branches first, and stops even if that fails", async () => {
+      const sandbox = await existing("feature-a");
+      lifecycle = createLifecycle({
+        envDir,
+        sandboxGit: {
+          ...sandboxGit.git,
+          sync: (target) => {
+            // Copied while it still runs.
+            expect(changes()).toStrictEqual([]);
+            return sandboxGit.git.sync(target);
+          },
+        },
+        sandboxes: createSandboxes(sbx),
+        sbx,
+        store,
+      });
+      await lifecycle.stop(sandbox);
+      expect(sandboxGit.synced).toStrictEqual(["feature-a"]);
+
+      lifecycle = createLifecycle({
+        envDir,
+        sandboxGit: {
+          ...sandboxGit.git,
+          sync: () => Promise.reject(new Error("daemon down")),
+        },
+        sandboxes: createSandboxes(sbx),
+        sbx,
+        store,
+      });
+      await sbx.start("feature-a");
+      calls.length = 0;
+      await lifecycle.stop(sandbox);
       expect(changes()).toStrictEqual([["stop", "feature-a"]]);
     });
 
@@ -479,6 +561,7 @@ describe(createLifecycle, () => {
       };
       lifecycle = createLifecycle({
         envDir,
+        sandboxGit: sandboxGit.git,
         sandboxes: createSandboxes(sbx),
         sbx,
         store: failingStore,
@@ -488,11 +571,41 @@ describe(createLifecycle, () => {
       expect(changes()).toStrictEqual([["rm", "old-experiment"]]);
     });
 
+    describe("with Git work", () => {
+      it("lists it, and copies the latest commits first", async () => {
+        const sandbox = await existing("feature-a");
+        sandboxGit.state.work = {
+          commits: [commit("a")],
+          count: 1,
+          unknown: undefined,
+        };
+        const { removal } = await lifecycle.inspect(sandbox);
+        expect(removal.work).toStrictEqual(sandboxGit.state.work);
+
+        await lifecycle.remove(sandbox, "feature-a", []);
+        expect(sandboxGit.synced).toStrictEqual(["feature-a"]);
+        expect(changes()).toStrictEqual([["rm", "feature-a"]]);
+      });
+
+      it("removes even if copying fails", async () => {
+        const sandbox = await existing("feature-a");
+        lifecycle = createLifecycle({
+          envDir,
+          sandboxGit: {
+            ...sandboxGit.git,
+            sync: () => Promise.reject(new Error("daemon down")),
+          },
+          sandboxes: createSandboxes(sbx),
+          sbx,
+          store,
+        });
+        await lifecycle.remove(sandbox, "feature-a", []);
+        expect(changes()).toStrictEqual([["rm", "feature-a"]]);
+      });
+    });
+
     it("removes an unmanaged sandbox with sbx rm, and its record", async () => {
-      const target = {
-        id: "00000000-0000-4000-8000-000000000003",
-        name: "old-experiment",
-      };
+      const target = await existing("old-experiment");
       await store.setNotes(target.id, "notes");
       const { env, removal } = await lifecycle.inspect(target);
       expect(env).toBeUndefined();
@@ -501,6 +614,7 @@ describe(createLifecycle, () => {
         hashes: [],
         hostCommands: [],
         method: "rm",
+        work: undefined,
       });
 
       await lifecycle.remove(target, "old-experiment", []);

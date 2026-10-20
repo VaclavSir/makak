@@ -15,6 +15,7 @@ import { createPanelServer, panelOrigin } from "../server/panel.ts";
 import type { PanelApp } from "../server/panel.ts";
 import { createProxyServer } from "../server/proxy/proxy.ts";
 import type { ProxyServer } from "../server/proxy/proxy.ts";
+import { createSandboxGit } from "../server/sandbox-git.ts";
 import { createSandboxes } from "../server/sandboxes.ts";
 import type { Sandboxes } from "../server/sandboxes.ts";
 import { createSandboxStore } from "../server/state.ts";
@@ -199,15 +200,18 @@ export const start = async (options: StartOptions): Promise<void> => {
   const auth = createAuth();
   const sandboxes = createSandboxes(tools.sbx);
   const store = createSandboxStore(config.stateDir);
+  const sandboxGit = createSandboxGit(tools.git);
 
   setPanelContext({
     config,
     lifecycle: createLifecycle({
       envDir: config.envDir,
+      sandboxGit,
       sandboxes,
       sbx: tools.sbx,
       store,
     }),
+    sandboxGit,
     sandboxes,
     store,
     tools,

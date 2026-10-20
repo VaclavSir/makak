@@ -62,7 +62,52 @@ const targetOf = (form: FormData, name: string): Target | undefined => {
 const hashesOf = (form: FormData) =>
   jsonField(hashesSchema, form.get("hashes") ?? "[]");
 
+const REPLACED = {
+  message:
+    "This sandbox was replaced by a new one with the same name. Reload the page.",
+};
+
+/**
+ * The sandbox a Git action was submitted for, if the name still belongs to
+ * the one the page showed, or the failure to return.
+ */
+const gitTargetOf = async (form: FormData, name: string) => {
+  const target = targetOf(form, name);
+  if (target === undefined) {
+    return { failure: fail(400, INCOMPLETE), ok: false } as const;
+  }
+  const sandbox = await findSandbox(name);
+  return sandbox.id === target.id
+    ? ({ ok: true, sandbox } as const)
+    : ({ failure: fail(409, REPLACED), ok: false } as const);
+};
+
+/** Like `gitTargetOf`, with the branch and SHA the page showed. */
+const branchActionOf = async (form: FormData, name: string) => {
+  const branch = form.get("branch");
+  const sha = form.get("sha");
+  if (typeof branch !== "string" || typeof sha !== "string") {
+    return { failure: fail(400, INCOMPLETE), ok: false } as const;
+  }
+  const target = await gitTargetOf(form, name);
+  return target.ok ? { ...target, branch, sha } : target;
+};
+
 export const actions: Actions = {
+  bringToHost: async ({ params, request }) => {
+    const action = await branchActionOf(await request.formData(), params.name);
+    if (!action.ok) {
+      return action.failure;
+    }
+    const { branch, sandbox, sha } = action;
+    const result = await attempt(() =>
+      getPanelContext().sandboxGit.bringToHost(sandbox, branch, sha)
+    );
+    return result.ok
+      ? { git: `Brought ${branch} to the host.` }
+      : result.failure;
+  },
+
   notes: async ({ params, request }) => {
     const sandbox = await findSandbox(params.name);
     const form = await request.formData();
@@ -110,6 +155,38 @@ export const actions: Actions = {
     }
     const { hashes, output, warnings } = result.value;
     return { plan: { hashes, output, warnings } };
+  },
+
+  push: async ({ params, request }) => {
+    const form = await request.formData();
+    const action = await branchActionOf(form, params.name);
+    if (!action.ok) {
+      return action.failure;
+    }
+    const { branch, sandbox, sha } = action;
+    // Present only for a force push: origin's SHA as the page showed it.
+    const lease = form.get("lease");
+    const result = await attempt(() =>
+      getPanelContext().sandboxGit.push(
+        sandbox,
+        branch,
+        sha,
+        typeof lease === "string" ? lease : undefined
+      )
+    );
+    return result.ok ? { git: `Pushed ${branch} to origin.` } : result.failure;
+  },
+
+  refresh: async ({ params, request }) => {
+    const target = await gitTargetOf(await request.formData(), params.name);
+    if (!target.ok) {
+      return target.failure;
+    }
+    const { sandbox } = target;
+    const result = await attempt(() =>
+      getPanelContext().sandboxGit.refresh(sandbox)
+    );
+    return result.ok ? { git: "Refreshed." } : result.failure;
   },
 
   remove: async ({ params, request }) => {

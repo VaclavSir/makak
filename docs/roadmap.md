@@ -62,12 +62,14 @@ Create sandboxes from the Panel, reproducibly.
 
 ## 4. Git
 
-No work ever exists only inside a sandbox.
+No work is lost without warning.
 
-- Branches mirrored into `refs/makak/<sandbox>/*` on a timer and on stop, with the last-mirrored SHA recorded.
+**Status: done.** Checked against a real `sbx` on 2026-10-20. See [Git](architecture.md#git).
+
+- Branches read from sbx's own copy, `refs/sandboxes/<sandbox>/*`, which it keeps while the sandbox is stopped and after it is removed; the Panel copies the latest commits itself before stop and remove.
 - Status: current branch, and how it compares to the host and origin.
-- Actions: fetch the host and origin, bring a branch to the host, push to origin (optionally `--force-with-lease`).
-- Blocking data-loss confirmation on remove.
+- Actions: copy the sandbox's latest commits and fetch origin, bring a branch to the host, push to origin (optionally `--force-with-lease`).
+- The remove confirmation lists the commits on no host branch, tag or other remote.
 
 **Done when:** removing a sandbox can never silently lose a commit.
 
@@ -100,6 +102,7 @@ The only gate on the MCP channel.
 - Warning for sandboxes that can reach the forge, read from `sbx policy ls`.
 - Complete teardown: env, per-sandbox MCP registrations and their secrets.
 - Orphan sweep on start and on demand, reporting config residue and unremoved work separately.
+- Warning when a new sandbox reuses a removed one's name while `refs/sandboxes/<name>/` holds commits no branch has: sbx may overwrite that copy.
 - Handoff directories: per-sandbox creation, preview, and copying between sandboxes.
 
 ## Later

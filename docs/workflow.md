@@ -45,7 +45,7 @@ flowchart LR
 
     agent -->|"tool calls"| panel
     panel -->|"only if allowed or approved"| mcp
-    clone -->|"mirrored by the Panel"| repo
+    clone -->|"copied by sbx"| repo
     repo -->|"read-only"| clone
     repo -->|"push, when you click it"| origin
     agent --x|"blocked by network policy"| origin
@@ -79,10 +79,10 @@ sequenceDiagram
     Host-->>Agent: new commits arrive through a read-only mount
     Agent->>Agent: work and commit in its clone
     loop every minute, and on stop
-        Panel->>Host: mirror the sandbox's branches
+        Agent->>Host: sbx copies the sandbox's branches
     end
     You->>Panel: "bring this branch to the host"
-    Panel->>Host: fetch the branch from the sandbox
+    Panel->>Host: fast-forward the branch to the sandbox's
     You->>Panel: "push to origin"
     Panel->>Origin: push
 ```
@@ -90,8 +90,7 @@ sequenceDiagram
 Things to know:
 
 - **The sandbox only sees origin through your machine.** To give an agent the latest `main`, fetch it on the host first (the Panel has a button for this).
-- **Nothing lives only inside a sandbox.** The Panel keeps a copy of every sandbox branch on the host, so you can stop or remove a sandbox without fear of losing commits.
-- **Removing a sandbox that still holds unsaved work** stops and lists exactly what would be lost before going ahead.
+- **Stopping or removing a sandbox loses no commits.** sbx keeps a copy of every sandbox branch in your repository, under `refs/sandboxes/<sandbox>/`, so you can see and take them while the sandbox is stopped, and after it is gone. Before removing one, the Panel lists the commits that are only in that copy, on no branch of yours.
 
 ## How tool calls are approved
 

@@ -1,7 +1,10 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import type { SubmitFunction } from "$app/forms";
+  import { SANDBOX_PAGE } from "#lib/dependencies.ts";
+  import type { Work } from "#server/sandbox-git.ts";
 
   import PlanReview from "./plan-review.svelte";
 
@@ -10,6 +13,8 @@
     hasNotes: boolean;
     hostCommands: string[];
     method: "env" | "rm";
+    /** Undefined when it isn't in clone mode. */
+    work: Work | undefined;
   }
 
   interface Plan {
@@ -100,6 +105,8 @@
     disabled={removing}
     onclick={() => {
       removing = true;
+      // What it would lose, as it is now, not as the page loaded.
+      void invalidate(SANDBOX_PAGE);
     }}>Remove…</button
   >
 </div>
@@ -127,14 +134,46 @@
 {#if removing}
   <section class="remove">
     <h2>Remove {name}</h2>
-    <p>Removing a sandbox can't be undone. This is lost with it:</p>
+    <p>Removing a sandbox can't be undone.</p>
+    {#if removal.work !== undefined}
+      {@const work = removal.work}
+      {#if work.count > 0}
+        <p class="warning">
+          <strong
+            >{work.count}
+            {work.count === 1 ? "commit is" : "commits are"} on no host branch, tag
+            or other remote.</strong
+          >
+          sbx keeps its copy of the sandbox's branches, in
+          <code>refs/sandboxes/{name}/</code>, after removal, but nothing else
+          has {work.count === 1 ? "it" : "them"}:
+        </p>
+        <ul class="commits">
+          {#each work.commits as commit (commit.sha)}
+            <li><code>{commit.sha.slice(0, 7)}</code> {commit.subject}</li>
+          {/each}
+          {#if work.count > work.commits.length}
+            <li>and {work.count - work.commits.length} more</li>
+          {/if}
+        </ul>
+      {:else if work.unknown === undefined}
+        <p>Every commit it has is on a host branch, a tag or another remote.</p>
+      {/if}
+      {#if work.unknown !== undefined}
+        <p class="warning">{work.unknown}</p>
+      {/if}
+      {#if status === "running"}
+        <p>Its latest commits are copied to the host first.</p>
+      {/if}
+    {/if}
+    <p>This is lost with it:</p>
     <ul>
-      <li>
-        <strong>Commits that exist only in the sandbox.</strong> The Panel can't
-        check for them yet, so assume there are some. To keep them, fetch them
-        into your repository on the host first:
-        <code>git fetch sandbox-{name}</code>.
-      </li>
+      {#if removal.work === undefined}
+        <li>
+          <strong>Commits that exist only in the sandbox</strong>, if it has its
+          own clone: the Panel found no repository with its branches.
+        </li>
+      {/if}
       <li>Uncommitted changes, and anything else inside the sandbox.</li>
       {#if !managed && removal.hasNotes}
         <li>Your notes on this sandbox.</li>
@@ -250,6 +289,10 @@
 
   .remove ul {
     padding-left: 1.25rem;
+  }
+
+  .commits {
+    list-style: none;
   }
 
   .remove label {

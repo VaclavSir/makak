@@ -80,10 +80,23 @@ What the Panel knows that `sbx` doesn't, such as notes and how it created a sand
 - **The record.** After `sbx env run` creates a sandbox, the Panel looks up its id and records the absolute file paths and args under it. A sandbox `sbx` created before failing is recorded too, so it can be removed with its env. A managed sandbox's record outlives it, so it can be created again; _Forget_ deletes the record. Removing an unmanaged sandbox deletes its notes, and the confirmation lists them.
 - **Identity.** Every action names the sandbox's id as the page saw it, and is refused when the name now belongs to another sandbox.
 - **One change at a time** per sandbox name, so a double click can't run two creates, or a stop in the middle of a remove.
-- **Removal** needs the name typed in. Until git mirroring exists, the confirmation can't tell whether the sandbox holds unique commits, so it says to assume it does. A managed sandbox is removed with `sbx env rm` and its recorded files, and the confirmation lists the `preRemove` host commands that run; when the files are gone, `sbx rm` is used and the confirmation says so.
+- **Removal** needs the name typed in, and the confirmation lists the commits [on no host branch](#git), and everything else lost with the sandbox. It is computed when the confirmation opens. A managed sandbox is removed with `sbx env rm` and its recorded files, and the confirmation lists the `preRemove` host commands that run; when the files are gone, `sbx rm` is used and the confirmation says so.
+- **Stopping** copies a running sandbox's branches first, because its git daemon stops with it; see [Git](#git).
 - **Warnings** are derived from the merged env files, with arg references substituted. They are shown and never enforced.
 
 Commands that create or start sandboxes run for minutes, and the request waits for them. They are not long-running processes the Panel owns: `sbx env run --detach` returns once the sandbox runs.
+
+## Git
+
+`src/server/sandbox-git.ts` shows the branches of clone-mode sandboxes and acts on them.
+
+- **sbx's copy.** For a clone-mode sandbox, sbx adds a `sandbox-<name>` remote to the host repository while the sandbox runs, served by a git daemon in it; stopping removes the remote and its `refs/remotes/sandbox-<name>/*`. sbx also copies the sandbox's branches to `refs/sandboxes/<name>/*` about once a minute while it runs: forced, so a rewritten branch is followed, and never pruned, so a deleted one stays. That copy is kept after the sandbox stops and after `sbx rm`, and it is what the Panel reads. The Panel does not fetch on a timer of its own.
+- **The repository** is the workspace's repository that has the sandbox's remote or its copied branches, so it is found while the sandbox is stopped too. A sandbox with neither, such as a direct-mode sandbox, has no Git section.
+- **Syncing.** Before the Panel stops or removes a running sandbox, and on _Refresh_, it copies the branches itself, the way sbx does, so commits from the last minute are included. A failure doesn't stop the stop or the removal. The branch checked out in the sandbox is read from its remote, so it is only known while it runs.
+- **What removing leaves.** Commits reachable from `refs/sandboxes/<name>/*` but from no branch, tag or remote-tracking ref outside the `sandbox-*` remotes. sbx keeps them after removal, and the confirmation lists them, so you know nothing else has them. When the repository can't be read, the confirmation says so instead.
+- **Actions.** _To host_ fast-forwards the host's branch to the sandbox's, creating it if needed: `git merge --ff-only` for the checked-out branch, so the working tree follows and local changes are never overwritten, and a fetch from the repository itself for any other, which git refuses for a branch checked out in another worktree. _Push_ pushes the sandbox's commit to `origin`, from the host repository and with its credentials; _Force push_ uses `--force-with-lease` with origin's SHA as the page showed it. Both name the SHA the page showed and are refused if the sandbox's branch moved since. Both work while the sandbox is stopped. _Refresh_ also fetches `origin`, which the Panel never does on its own.
+- **One at a time.** Git changes for a sandbox are queued, so an action never sees the copy half-updated by a sync. Reading the status is not, so a slow fetch never holds up a page.
+- **No prompts.** git runs with `GIT_TERMINAL_PROMPT=0`: the Panel has no terminal, so a credential prompt would wait until the timeout.
 
 ## Reverse proxy
 

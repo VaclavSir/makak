@@ -15,6 +15,7 @@ import {
   readEnvFile,
 } from "./envs.ts";
 import type { EnvFile } from "./envs.ts";
+import type { GitStatus, SandboxGit, Work } from "./sandbox-git.ts";
 import type { Sandboxes } from "./sandboxes.ts";
 import type { EnvRecord, SandboxStore } from "./state.ts";
 import type { EnvSpec, Sandbox, Sbx } from "./tools/index.ts";
@@ -38,7 +39,9 @@ export const isLifecycleError = (error: unknown): error is LifecycleError =>
  */
 export const userMessage = (error: unknown): string | undefined =>
   error instanceof Error &&
-  ["CommandError", "LifecycleError", "StateError"].includes(error.name)
+  ["CommandError", "GitError", "LifecycleError", "StateError"].includes(
+    error.name
+  )
     ? error.message
     : undefined;
 
@@ -78,6 +81,8 @@ export interface Removal {
    */
   method: "env" | "rm";
   hasNotes: boolean;
+  /** Commits it could lose; undefined when it isn't in clone mode. */
+  work: Work | undefined;
 }
 
 export interface Inspection {
@@ -88,6 +93,8 @@ export interface Inspection {
    * then started with `sbx run` and removed with `sbx rm`.
    */
   envProblem: string | undefined;
+  /** Undefined when the sandbox isn't in clone mode. */
+  git: GitStatus | undefined;
   notes: string;
   removal: Removal;
   /** Workflow warnings, from the env files as they are now. */
@@ -101,10 +108,14 @@ export interface Lifecycle {
   planStart: (target: Target) => Promise<Plan>;
   /** `hashes` from the plan, or none when there is no plan. */
   start: (target: Target, hashes: string[]) => Promise<void>;
+  /** Copies a running sandbox's branches first. */
   stop: (target: Target) => Promise<void>;
   /** What the sandbox page shows about how the sandbox is managed. */
-  inspect: (target: Target) => Promise<Inspection>;
-  /** `confirmation` must be the sandbox's name. */
+  inspect: (sandbox: Sandbox) => Promise<Inspection>;
+  /**
+   * `confirmation` must be the sandbox's name. A running sandbox's branches
+   * are copied first, and sbx keeps the copy after removal.
+   */
   remove: (
     target: Target,
     confirmation: string,
@@ -114,6 +125,7 @@ export interface Lifecycle {
 
 export interface LifecycleOptions {
   envDir: string;
+  sandboxGit: Pick<SandboxGit, "status" | "sync">;
   now?: () => Date;
   sandboxes: Sandboxes;
   sbx: Sbx;
@@ -179,6 +191,7 @@ const quietly = async (followUp: () => Promise<unknown>) => {
 export const createLifecycle = ({
   envDir,
   now = () => new Date(),
+  sandboxGit,
   sandboxes,
   sbx,
   store,
@@ -338,15 +351,26 @@ export const createLifecycle = ({
         return sandbox;
       }),
 
-    inspect: async (target) => {
-      const { env, files, notes, problem } = await recorded(target.id);
+    inspect: async (sandbox) => {
+      const [{ env, files, notes, problem }, git] = await Promise.all([
+        recorded(sandbox.id),
+        sandboxGit.status(sandbox),
+      ]);
       const hasNotes = notes !== "";
+      const work = git?.work;
       if (env === undefined || files === undefined) {
         return {
           env,
           envProblem: problem,
+          git,
           notes,
-          removal: { hasNotes, hashes: [], hostCommands: [], method: "rm" },
+          removal: {
+            hasNotes,
+            hashes: [],
+            hostCommands: [],
+            method: "rm",
+            work,
+          },
           warnings: [],
         };
       }
@@ -355,12 +379,14 @@ export const createLifecycle = ({
       return {
         env,
         envProblem: undefined,
+        git,
         notes,
         removal: {
           hasNotes,
           hashes: files.map(({ hash }) => hash),
           hostCommands: preRemoveCommands(merged, args),
           method: "env",
+          work,
         },
         warnings: envWarnings(merged, args),
       };
@@ -392,7 +418,9 @@ export const createLifecycle = ({
             `Type the sandbox's name, ${target.name}, to confirm.`
           );
         }
-        await resolve(target);
+        const sandbox = await resolve(target);
+        // Commits from the last minute, which sbx may not have copied yet.
+        await quietly(() => sandboxGit.sync(sandbox));
         const { env, files } = await recorded(target.id);
         if (env === undefined) {
           await sbx.rm(target.name);
@@ -437,7 +465,9 @@ export const createLifecycle = ({
 
     stop: (target) =>
       exclusive(target.name, async () => {
-        await resolve(target);
+        const sandbox = await resolve(target);
+        // Commits from the last minute, which sbx may not have copied yet.
+        await quietly(() => sandboxGit.sync(sandbox));
         await sbx.stop(target.name);
       }),
   };

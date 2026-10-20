@@ -2,6 +2,7 @@
   import { invalidate } from "$app/navigation";
   import { publishCommand, sandboxCommands } from "#lib/commands.ts";
   import CopyField from "#lib/components/copy-field.svelte";
+  import GitStatus from "#lib/components/git-status.svelte";
   import NotesForm from "#lib/components/notes-form.svelte";
   import ProxyAddresses from "#lib/components/proxy-addresses.svelte";
   import SandboxActions from "#lib/components/sandbox-actions.svelte";
@@ -104,6 +105,13 @@
         <li><code>{workspace}</code></li>
       {/each}
     </ul>
+  {/if}
+
+  {#if data.git !== undefined}
+    <h2>Git</h2>
+    {#key data.sandbox.id}
+      <GitStatus git={data.git} id={data.sandbox.id} />
+    {/key}
   {/if}
 
   <h2>Addresses</h2>

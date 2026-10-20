@@ -1,11 +1,19 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import { CommandError, exec as realExec, execChecked } from "./exec.ts";
+import {
+  CommandError,
+  exec as realExec,
+  execChecked,
+  firstLine,
+} from "./exec.ts";
 import type { CommandResult, Exec } from "./exec.ts";
+import { createFakeGit, createGit } from "./git.ts";
+import type { Git } from "./git.ts";
 import { FAKE_SANDBOXES, parseSandboxList } from "./sbx.ts";
 import type { EnvSpec, Sandbox } from "./sbx.ts";
 
+export type { Commit, Git, Ref } from "./git.ts";
 export type { EnvSpec, Sandbox } from "./sbx.ts";
 
 // Thin wrappers over host tools. Each method maps to one command, and
@@ -31,11 +39,6 @@ export interface Sbx {
   /** `sbx rm --force`: removes a sandbox and its scoped secrets. */
   rm: (name: string) => Promise<void>;
   /** `sbx version`, as printed. */
-  version: () => Promise<string>;
-}
-
-export interface Git {
-  /** `git --version`, as printed. */
   version: () => Promise<string>;
 }
 
@@ -89,8 +92,6 @@ const envArgs = ({ args, files, name }: EnvSpec): string[] => {
   ];
 };
 
-const firstLine = (text: string): string => text.trim().split("\n")[0] ?? "";
-
 const browserCommand = (platform: NodeJS.Platform): string | undefined => {
   if (platform === "darwin") {
     return "open";
@@ -114,10 +115,7 @@ export const createTools = (
       await execChecked(exec, command, [url]);
     },
   },
-  git: {
-    version: async () =>
-      firstLine(await execChecked(exec, "git", ["--version"])),
-  },
+  git: createGit(exec),
   sbx: {
     envPlan: async (spec) =>
       await sbx(exec, ["env", "plan", ...envArgs(spec)], SBX_PLAN_TIMEOUT_MS),
@@ -230,6 +228,6 @@ export const createFakeSbx = (): Sbx => {
  */
 export const createFakeTools = (browser = createTools().browser): Tools => ({
   browser,
-  git: { version: () => Promise.resolve("git version 0.0.0 (fake)") },
+  git: createFakeGit(),
   sbx: createFakeSbx(),
 });
