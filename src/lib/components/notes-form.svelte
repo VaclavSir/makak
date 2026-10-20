@@ -44,7 +44,7 @@
   <input type="hidden" name="id" value={sandboxId} />
   <textarea
     name="notes"
-    rows="6"
+    rows="3"
     maxlength={maxLength}
     placeholder="What is this sandbox for?"
     bind:value={notes}></textarea>

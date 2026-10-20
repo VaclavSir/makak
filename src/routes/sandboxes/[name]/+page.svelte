@@ -83,7 +83,44 @@
       <code>sbx run</code> and removes it with <code>sbx rm</code>.
     </p>
   {/if}
+{/if}
 
+<h2>Notes</h2>
+{#key data.sandbox.id}
+  <NotesForm
+    initial={data.notes}
+    maxLength={data.maxNotesLength}
+    sandboxId={data.sandbox.id}
+  />
+{/key}
+
+{#if sandbox !== undefined}
+  <h2>Workspaces</h2>
+  {#if sandbox.workspaces.length === 0}
+    <p class="muted">None.</p>
+  {:else}
+    <ul class="plain">
+      {#each sandbox.workspaces as workspace (workspace)}
+        <li><code>{workspace}</code></li>
+      {/each}
+    </ul>
+  {/if}
+
+  <h2>Addresses</h2>
+  <ProxyAddresses
+    name={sandbox.name}
+    ports={sandbox.ports}
+    running={sandbox.status === "running"}
+    settings={data.proxy}
+  />
+{/if}
+
+<h2>Connect</h2>
+{#each commands as { label, value } (label)}
+  <CopyField {label} {value} />
+{/each}
+
+{#if sandbox !== undefined}
   {#if data.warnings.length > 0}
     <h2>Workflow warnings</h2>
     <ul class="warnings">
@@ -127,25 +164,6 @@
     {/if}
   {/if}
 
-  <h2>Workspaces</h2>
-  {#if sandbox.workspaces.length === 0}
-    <p class="muted">None.</p>
-  {:else}
-    <ul class="plain">
-      {#each sandbox.workspaces as workspace (workspace)}
-        <li><code>{workspace}</code></li>
-      {/each}
-    </ul>
-  {/if}
-
-  <h2>Addresses</h2>
-  <ProxyAddresses
-    name={sandbox.name}
-    ports={sandbox.ports}
-    running={sandbox.status === "running"}
-    settings={data.proxy}
-  />
-
   <h2>Published ports</h2>
   {#if sandbox.ports.length === 0}
     <p class="muted">
@@ -169,20 +187,6 @@
     </table>
   {/if}
 {/if}
-
-<h2>Connect</h2>
-{#each commands as { label, value } (label)}
-  <CopyField {label} {value} />
-{/each}
-
-<h2>Notes</h2>
-{#key data.sandbox.id}
-  <NotesForm
-    initial={data.notes}
-    maxLength={data.maxNotesLength}
-    sandboxId={data.sandbox.id}
-  />
-{/key}
 
 <style>
   .error p {
