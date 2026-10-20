@@ -100,10 +100,6 @@
 
   nav h2 {
     margin: 1.5rem 0.5rem 0.5rem;
-    color: var(--muted);
-    font-size: 0.75rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
   }
 
   .new {
@@ -178,7 +174,7 @@
 
   main {
     min-width: 0;
-    padding: 2rem 2.5rem;
+    padding: 1.25rem 2rem;
   }
 
   @media (max-width: 40rem) {

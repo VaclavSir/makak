@@ -99,9 +99,10 @@
       >New from this…</a
     >
   {/if}
+  <!-- Plain, away from the rest: the confirmation it opens is the warning. -->
   <button
     type="button"
-    class="danger"
+    class="remove-button"
     disabled={removing}
     onclick={() => {
       removing = true;
@@ -269,6 +270,15 @@
 
   .button:hover {
     border-color: var(--muted);
+  }
+
+  .remove-button {
+    margin-left: auto;
+  }
+
+  .remove-button:hover:enabled {
+    border-color: var(--error-text);
+    color: var(--error-text);
   }
 
   .error {

@@ -192,7 +192,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.5rem;
   }
 
   .explained {

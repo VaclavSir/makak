@@ -62,12 +62,16 @@ h2 {
 
 h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 1.4rem;
 }
 
+/* Section labels, small so sections sit close together. */
 h2 {
-  margin: 2rem 0 0.75rem;
-  font-size: 1rem;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 button,

@@ -25,7 +25,8 @@
 
 <style>
   button {
-    min-width: 5rem;
-    font-size: 0.85rem;
+    min-width: 4.5rem;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.8rem;
   }
 </style>

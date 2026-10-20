@@ -88,7 +88,7 @@
     align-items: center;
     gap: 0.75rem;
     border-bottom: 1px solid var(--border);
-    padding: 0.4rem 0;
+    padding: 0.3rem 0;
   }
 
   li > :first-child {

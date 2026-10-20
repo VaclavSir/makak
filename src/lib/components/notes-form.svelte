@@ -95,6 +95,19 @@
 <svelte:window onpagehide={() => autosave.flush()} />
 
 <form method="POST" action="?/notes" bind:this={form}>
+  <!-- The status sits by the heading, so it never moves what is below. -->
+  <div class="heading">
+    <h2>Notes</h2>
+    <span class="status" aria-live="polite">
+      {#if status === "saving"}
+        Saving…
+      {:else if status === "pending"}
+        Unsaved changes
+      {:else if status === "saved"}
+        Saved
+      {/if}
+    </span>
+  </div>
   <input type="hidden" name="id" value={sandboxId} />
   <textarea
     name="notes"
@@ -107,17 +120,9 @@
       autosave.change(notes);
     }}
     onblur={() => autosave.flush()}></textarea>
-  <p class="status" aria-live="polite">
-    {#if status === "error"}
-      <span class="error">{message}</span>
-    {:else if status === "saving"}
-      Saving…
-    {:else if status === "pending"}
-      Unsaved changes
-    {:else if status === "saved"}
-      Saved
-    {/if}
-  </p>
+  {#if status === "error"}
+    <p class="error" role="alert">{message}</p>
+  {/if}
   <noscript><button type="submit">Save notes</button></noscript>
 </form>
 
@@ -128,18 +133,22 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--surface);
-    padding: 0.6rem 0.75rem;
+    padding: 0.4rem 0.6rem;
     resize: vertical;
   }
 
+  .heading {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+
   .status {
-    min-height: 1.5rem;
-    margin: 0.25rem 0 0;
     color: var(--muted);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 
   .error {
-    padding: 0.2rem 0.5rem;
+    margin: 0.4rem 0 0;
   }
 </style>

@@ -263,7 +263,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
   }
 
   .row label {
@@ -275,6 +275,11 @@
   .grow {
     flex: 1;
     min-width: 12rem;
+  }
+
+  /* Workspace paths are long; the start shows which one. */
+  select {
+    max-width: 14rem;
   }
 
   .mono,
