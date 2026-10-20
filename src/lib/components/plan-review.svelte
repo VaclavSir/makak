@@ -57,7 +57,8 @@
           return;
         }
         onapplied?.();
-        await update();
+        // Its action may belong to another page; stay on this one.
+        await update({ navigate: false });
       };
     }}
   >

@@ -1,81 +1,30 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { resolve } from "$app/paths";
   import type { SubmitFunction } from "$app/forms";
-  import RunState from "#lib/components/run-state.svelte";
-  import { formatTime } from "#lib/format.ts";
-  import type { PackageScripts, RunCommand } from "#server/sandbox-runs.ts";
-  import type { Run } from "#server/tools/index.ts";
+  import type { RunsView } from "#lib/runs-context.ts";
 
-  interface RunsView {
-    commands: RunCommand[];
-    error: string | undefined;
-    list: Run[] | undefined;
-    prompt: boolean;
-    scripts: PackageScripts | undefined;
-  }
+  // What can be run in a sandbox. A run started here opens in its own tab.
 
   let {
     agent,
     id,
-    name,
     runs,
     running,
     workspaces,
   }: {
     agent: string | undefined;
     id: string;
-    name: string;
     runs: RunsView;
     running: boolean;
     workspaces: string[];
   } = $props();
 
-  /** How many runs are listed; older ones are kept in the sandbox. */
-  const LISTED = 15;
-  const POLL_MS = 3000;
-
-  // The list as polled, starting from what the page loaded.
-  // svelte-ignore state_referenced_locally
-  let list = $state(runs.list);
   let busy = $state<string | undefined>();
   let message = $state("");
   let command = $state("");
   // svelte-ignore state_referenced_locally
   let cwd = $state(workspaces[0] ?? "");
   let prompt = $state("");
-
-  $effect(() => {
-    ({ list } = runs);
-  });
-
-  const anyRunning = $derived(list?.some(({ state }) => state === "running"));
-
-  // Polled while something runs, so states and exit codes appear.
-  $effect(() => {
-    if (!running || anyRunning !== true) {
-      return;
-    }
-    const timer = setInterval(async () => {
-      try {
-        const response = await fetch(
-          `/sandboxes/${encodeURIComponent(name)}/runs`
-        );
-        const body = (await response.json()) as { runs?: Run[] };
-        if (body.runs !== undefined) {
-          list = body.runs;
-        }
-      } catch {
-        // The next poll tries again.
-      }
-    }, POLL_MS);
-    return () => {
-      clearInterval(timer);
-    };
-  });
-
-  const runPage = (run: string) =>
-    resolve("/sandboxes/[name]/runs/[run]", { name, run });
 
   const submit =
     (what: string): SubmitFunction =>
@@ -212,49 +161,6 @@
   {#if message !== ""}
     <p class="error">{message}</p>
   {/if}
-
-  {#if list !== undefined && list.length > 0}
-    <table>
-      <thead>
-        <tr>
-          <th>Command</th>
-          <th>Started</th>
-          <th>State</th>
-          <th><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each list.slice(0, LISTED) as run (run.id)}
-          <tr>
-            <td class="command">
-              <a href={runPage(run.id)}><code>{run.command}</code></a>
-            </td>
-            <td class="muted">{formatTime(run.startedAt)}</td>
-            <td><RunState {run} /></td>
-            <td>
-              <form
-                method="POST"
-                action={run.state === "running" ? "?/stopRun" : "?/rerun"}
-                use:enhance={submit(`row:${run.id}`)}
-              >
-                <input type="hidden" name="id" value={id} />
-                <input type="hidden" name="run" value={run.id} />
-                <button type="submit" disabled={busy !== undefined}>
-                  {#if busy === `row:${run.id}`}
-                    {run.state === "running" ? "Stopping…" : "Starting…"}
-                  {:else}
-                    {run.state === "running" ? "Stop" : "Run again"}
-                  {/if}
-                </button>
-              </form>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else if list !== undefined}
-    <p class="muted">No runs yet.</p>
-  {/if}
 {/if}
 
 <style>
@@ -289,36 +195,5 @@
 
   .muted {
     color: var(--muted);
-  }
-
-  table {
-    border-collapse: collapse;
-    width: 100%;
-  }
-
-  th,
-  td {
-    border-bottom: 1px solid var(--border);
-    padding: 0.3rem 1rem 0.3rem 0;
-    text-align: left;
-    vertical-align: top;
-  }
-
-  th {
-    color: var(--muted);
-    font-weight: normal;
-  }
-
-  .command {
-    overflow-wrap: anywhere;
-  }
-
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 </style>

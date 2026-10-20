@@ -1,123 +1,25 @@
 <script lang="ts">
-  import { invalidate } from "$app/navigation";
-  import { publishCommand, sandboxCommands } from "#lib/commands.ts";
+  import { sandboxCommands, publishCommand } from "#lib/commands.ts";
   import CopyField from "#lib/components/copy-field.svelte";
   import GitStatus from "#lib/components/git-status.svelte";
   import NotesForm from "#lib/components/notes-form.svelte";
   import ProxyAddresses from "#lib/components/proxy-addresses.svelte";
   import RunsPanel from "#lib/components/runs-panel.svelte";
-  import SandboxActions from "#lib/components/sandbox-actions.svelte";
-  import StatusDot from "#lib/components/status-dot.svelte";
-  import { SANDBOX_PAGE } from "#lib/dependencies.ts";
   import { formatTime } from "#lib/format.ts";
+  import { liveSandbox } from "#lib/live-sandbox.ts";
+  import { getRunsContext } from "#lib/runs-context.ts";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
 
-  // Live from the sidebar's polled list. When sbx can't be reached, fall back
-  // to what the page loaded with.
-  const current = $derived(
-    data.sandboxes === undefined
-      ? data.sandbox
-      : data.sandboxes.find(({ name }) => name === data.sandbox.name)
-  );
-  // The name now belongs to a different sandbox than the page loaded.
-  const replaced = $derived(
-    current !== undefined && current.id !== data.sandbox.id
-  );
-  const sandbox = $derived(replaced ? undefined : current);
+  const runs = getRunsContext();
+  const sandbox = $derived(liveSandbox(data.sandbox, data.sandboxes).sandbox);
   const commands = $derived(sandboxCommands(data.sandbox.name, data.sshSuffix));
-
-  // Runs arrive after the page, since the sandbox is asked for them. The last
-  // answer stays shown while a newer one comes, so the section doesn't blink.
-  let loaded = $state<
-    { for: string; value: Awaited<typeof data.runs> } | undefined
-  >();
-  let runsFailed = $state(false);
-  const runs = $derived(
-    loaded?.for === data.sandbox.id ? loaded.value : undefined
-  );
-  $effect(() => {
-    const pending = data.runs;
-    const forId = data.sandbox.id;
-    let latest = true;
-    const settle = async () => {
-      try {
-        const value = await pending;
-        if (latest) {
-          loaded = { for: forId, value };
-          runsFailed = false;
-        }
-      } catch {
-        if (latest) {
-          runsFailed = true;
-        }
-      }
-    };
-    void settle();
-    return () => {
-      latest = false;
-    };
-  });
 </script>
 
 <svelte:head>
   <title>{data.sandbox.name} · Makak Panel</title>
 </svelte:head>
-
-<header>
-  <h1>{data.sandbox.name}</h1>
-  {#if sandbox !== undefined}
-    <span class="status"
-      ><StatusDot status={sandbox.status} />{sandbox.status}</span
-    >
-  {/if}
-  {#if data.env === undefined}
-    <span
-      class="badge"
-      title="Not created by the Panel, so the Panel doesn't know how it was configured."
-      >unmanaged</span
-    >
-  {:else}
-    <span
-      class="badge"
-      title="Created by the Panel, which replays its env files and args."
-      >managed</span
-    >
-  {/if}
-</header>
-
-{#if replaced}
-  <div class="error">
-    <p>
-      This sandbox was removed, and a new one now has the same name. The notes
-      below belong to the old one.
-    </p>
-    <button type="button" onclick={() => invalidate(SANDBOX_PAGE)}>
-      Show the new sandbox
-    </button>
-  </div>
-{:else if sandbox === undefined}
-  <p class="error">This sandbox no longer exists.</p>
-{:else}
-  {#key data.sandbox.id}
-    <SandboxActions
-      envProblem={data.envProblem}
-      id={data.sandbox.id}
-      managed={data.env !== undefined}
-      name={data.sandbox.name}
-      removal={data.removal}
-      status={sandbox.status}
-    />
-  {/key}
-
-  {#if data.envProblem !== undefined}
-    <p class="error">
-      {data.envProblem}. Until they are back, the Panel starts it with
-      <code>sbx run</code> and removes it with <code>sbx rm</code>.
-    </p>
-  {/if}
-{/if}
 
 <div class="columns">
   <div class="column">
@@ -131,17 +33,16 @@
 
     {#if sandbox !== undefined}
       <h2>Runs</h2>
-      {#if runsFailed}
+      {#if runs.failed}
         <p class="error">Can't list the runs. Reload the page to try again.</p>
-      {:else if runs === undefined}
+      {:else if runs.view === undefined}
         <p class="muted">Asking the sandbox…</p>
       {:else}
         {#key data.sandbox.id}
           <RunsPanel
             agent={sandbox.agent}
             id={data.sandbox.id}
-            name={data.sandbox.name}
-            {runs}
+            runs={runs.view}
             running={sandbox.status === "running"}
             workspaces={sandbox.workspaces}
           />
@@ -258,18 +159,6 @@
 </div>
 
 <style>
-  .error p {
-    margin: 0 0 0.5rem;
-  }
-
-  header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-
   /* What you act on, then what you look up: side by side when there is room. */
   @media (min-width: 72rem) {
     .columns {
@@ -300,21 +189,6 @@
   h3 {
     margin: 1rem 0 0.4rem;
     font-size: 0.9rem;
-  }
-
-  .status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: var(--muted);
-  }
-
-  .badge {
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0 0.6rem;
-    color: var(--muted);
-    font-size: 0.8rem;
   }
 
   dl {

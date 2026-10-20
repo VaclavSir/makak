@@ -1,5 +1,6 @@
 import { error as httpError } from "@sveltejs/kit";
 
+import { RUN_PAGE } from "#lib/dependencies.ts";
 import { RUN_COLUMNS, RUN_ROWS } from "#lib/runs.ts";
 import { orUserError } from "#lib/server/actions.ts";
 import { findSandbox } from "#lib/server/sandbox.ts";
@@ -7,7 +8,8 @@ import { getPanelContext } from "#server/context.ts";
 
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ depends, params }) => {
+  depends(RUN_PAGE);
   const sandbox = await findSandbox(params.name);
   const size = { columns: RUN_COLUMNS, rows: RUN_ROWS };
   if (sandbox.status !== "running") {

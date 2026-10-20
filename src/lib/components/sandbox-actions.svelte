@@ -49,6 +49,8 @@
   let removeMessage = $state("");
 
   const running = $derived(status === "running");
+  // The overview's actions, also from a run's tab.
+  const base = $derived(resolve("/sandboxes/[name]", { name }));
 
   /** Submits a form, keeping its outcome here rather than in the page. */
   const submit =
@@ -66,28 +68,41 @@
           plan = result.data.plan as Plan;
           return;
         }
-        await update();
+        // The actions belong to the overview; stay on the page they came from.
+        await update({ navigate: false });
       };
     };
 </script>
 
 <div class="actions">
   {#if running}
-    <form method="POST" action="?/stop" use:enhance={submit("stopping")}>
+    <form
+      method="POST"
+      action={`${base}?/stop`}
+      use:enhance={submit("stopping")}
+    >
       <input type="hidden" name="id" value={id} />
       <button type="submit" disabled={busy !== undefined}>
         {busy === "stopping" ? "Stopping…" : "Stop"}
       </button>
     </form>
   {:else if managed && envProblem === undefined}
-    <form method="POST" action="?/planStart" use:enhance={submit("planning")}>
+    <form
+      method="POST"
+      action={`${base}?/planStart`}
+      use:enhance={submit("planning")}
+    >
       <input type="hidden" name="id" value={id} />
       <button type="submit" disabled={busy !== undefined || plan !== undefined}>
         {busy === "planning" ? "Planning…" : "Start…"}
       </button>
     </form>
   {:else}
-    <form method="POST" action="?/start" use:enhance={submit("starting")}>
+    <form
+      method="POST"
+      action={`${base}?/start`}
+      use:enhance={submit("starting")}
+    >
       <input type="hidden" name="id" value={id} />
       <button type="submit" disabled={busy !== undefined}>
         {busy === "starting" ? "Starting…" : "Start"}
@@ -117,7 +132,7 @@
 
 {#if plan !== undefined}
   <PlanReview
-    action="?/start"
+    action={`${base}?/start`}
     busyLabel="Starting…"
     fields={{ hashes: JSON.stringify(plan.hashes), id }}
     onapplied={() => {
@@ -198,7 +213,7 @@
     {/if}
     <form
       method="POST"
-      action="?/remove"
+      action={`${base}?/remove`}
       use:enhance={() => {
         removeBusy = true;
         removeMessage = "";

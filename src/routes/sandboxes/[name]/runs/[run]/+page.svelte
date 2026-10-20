@@ -1,14 +1,19 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { invalidateAll } from "$app/navigation";
+  import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import type { SubmitFunction } from "$app/forms";
   import RunState from "#lib/components/run-state.svelte";
   import TerminalView from "#lib/components/terminal-view.svelte";
+  import { RUN_PAGE } from "#lib/dependencies.ts";
   import { formatTime } from "#lib/format.ts";
+  import { runIdOf } from "#lib/run-tabs.ts";
+  import { getRunsContext } from "#lib/runs-context.ts";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
+
+  const runs = getRunsContext();
 
   let busy = $state<"rerun" | "stop" | undefined>();
   let message = $state("");
@@ -28,7 +33,18 @@
           message = String(result.data?.message ?? "It didn't work.");
           return;
         }
-        await update();
+        // The rerun takes this tab over.
+        const rerun =
+          result.type === "redirect" ? runIdOf(result.location) : undefined;
+        if (data.run !== undefined && rerun !== undefined) {
+          runs.rerun(data.run.id, rerun);
+        }
+        // Stay here: the actions belong to the overview.
+        await update({ navigate: false, refreshAll: false });
+        if (rerun === undefined) {
+          await invalidate(RUN_PAGE);
+        }
+        await runs.refresh();
       };
     };
 </script>
@@ -38,21 +54,20 @@
   >
 </svelte:head>
 
-<p class="back"><a href={sandboxPage}>← {data.sandbox.name}</a></p>
-
 {#if data.run === undefined}
   <p class="error">{data.problem}</p>
 {:else}
   {@const run = data.run}
-  <header>
-    <h1><code>{run.command}</code></h1>
-    <RunState {run} />
-  </header>
-  <p class="muted">
-    Started {formatTime(run.startedAt)} in <code>{run.cwd}</code>
-  </p>
-
-  <div class="actions">
+  <div class="top">
+    <div class="about">
+      <div class="title">
+        <code class="command">{run.command}</code>
+        <RunState {run} />
+      </div>
+      <p class="muted">
+        Started {formatTime(run.startedAt)} in <code>{run.cwd}</code>
+      </p>
+    </div>
     {#if run.state === "running"}
       <form
         method="POST"
@@ -65,18 +80,19 @@
           {busy === "stop" ? "Stopping…" : "Stop"}
         </button>
       </form>
+    {:else}
+      <form
+        method="POST"
+        action={`${sandboxPage}?/rerun`}
+        use:enhance={submit("rerun")}
+      >
+        <input type="hidden" name="id" value={data.sandbox.id} />
+        <input type="hidden" name="run" value={run.id} />
+        <button type="submit" disabled={busy !== undefined}>
+          {busy === "rerun" ? "Starting…" : "Run again"}
+        </button>
+      </form>
     {/if}
-    <form
-      method="POST"
-      action={`${sandboxPage}?/rerun`}
-      use:enhance={submit("rerun")}
-    >
-      <input type="hidden" name="id" value={data.sandbox.id} />
-      <input type="hidden" name="run" value={run.id} />
-      <button type="submit" disabled={busy !== undefined}>
-        {busy === "rerun" ? "Starting…" : "Run again"}
-      </button>
-    </form>
   </div>
   {#if message !== ""}
     <p class="error">{message}</p>
@@ -87,7 +103,10 @@
       columns={data.size.columns}
       logSize={run.logSize}
       name={data.sandbox.name}
-      onended={() => invalidateAll()}
+      onended={() => {
+        void invalidate(RUN_PAGE);
+        void runs.refresh();
+      }}
       rows={data.size.rows}
       run={run.id}
       running={run.state === "running"}
@@ -96,30 +115,34 @@
 {/if}
 
 <style>
-  .back {
-    margin: 0 0 1rem;
+  .top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    margin: 0.75rem 0;
   }
 
-  header {
+  .about {
+    min-width: 0;
+  }
+
+  .title {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.6rem;
   }
 
-  h1 {
-    margin: 0;
-    font-size: 1.1rem;
+  .command {
+    font-size: 1rem;
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
 
   .muted {
+    margin: 0.2rem 0 0;
     color: var(--muted);
-  }
-
-  .actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
   }
 </style>
