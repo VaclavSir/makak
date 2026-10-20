@@ -39,9 +39,13 @@ export const isLifecycleError = (error: unknown): error is LifecycleError =>
  */
 export const userMessage = (error: unknown): string | undefined =>
   error instanceof Error &&
-  ["CommandError", "GitError", "LifecycleError", "StateError"].includes(
-    error.name
-  )
+  [
+    "CommandError",
+    "GitError",
+    "LifecycleError",
+    "RunError",
+    "StateError",
+  ].includes(error.name)
     ? error.message
     : undefined;
 

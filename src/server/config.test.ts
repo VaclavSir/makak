@@ -28,6 +28,7 @@ describe(parseConfig, () => {
       },
     });
     expect(config.ssh).toStrictEqual({ hostSuffix: ".sbx" });
+    expect(config.runs).toStrictEqual({ projects: [] });
     expect({
       envDir: config.envDir,
       handoffsDir: config.handoffsDir,
@@ -71,6 +72,28 @@ describe(parseConfig, () => {
     expect(() =>
       parseConfig({ panel: { hostname }, proxy: { suffixes } })
     ).toThrow(/Panel hostname/u);
+  });
+
+  it("reads commands per project, with the path's ~ expanded", () => {
+    const config = parseConfig({
+      runs: {
+        projects: [
+          {
+            commands: [{ command: "npm start", label: "Start" }],
+            path: "~/Projects/shop",
+          },
+        ],
+      },
+    });
+    expect(config.runs.projects).toStrictEqual([
+      {
+        commands: [{ command: "npm start", label: "Start" }],
+        path: path.join(homedir(), "Projects/shop"),
+      },
+    ]);
+    expect(() =>
+      parseConfig({ runs: { projects: [{ commands: [], path: "/p" }] } })
+    ).toThrow(/commands/u);
   });
 
   it("rejects relative paths", () => {

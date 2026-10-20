@@ -4,27 +4,42 @@ import { SANDBOX_PAGE } from "#lib/dependencies.ts";
 import {
   attempt,
   hashesSchema,
+  orUserError,
   INCOMPLETE,
   jsonField,
 } from "#lib/server/actions.ts";
+import { findSandbox, sandboxOf, targetOf } from "#lib/server/sandbox.ts";
 import { getPanelContext } from "#server/context.ts";
-import type { Inspection, Target } from "#server/lifecycle.ts";
+import type { Inspection } from "#server/lifecycle.ts";
 import { isStateError, MAX_NOTES_LENGTH } from "#server/state.ts";
 import type { Sandbox } from "#server/tools/index.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-const findSandbox = async (name: string) => {
-  let sandbox: Sandbox | undefined;
-  try {
-    sandbox = await getPanelContext().sandboxes.find(name);
-  } catch (error) {
-    httpError(503, `Can't list sandboxes: ${(error as Error).message}`);
+/**
+ * What can be run in the sandbox, and its runs. Only a running sandbox can
+ * be asked; `error` says why it couldn't.
+ */
+const runsOf = async (sandbox: Sandbox) => {
+  const { sandboxRuns } = getPanelContext();
+  const view = {
+    commands: sandboxRuns.commands(sandbox),
+    error: undefined as string | undefined,
+    list: undefined as Awaited<ReturnType<typeof sandboxRuns.list>> | undefined,
+    prompt: sandboxRuns.promptCommand(sandbox, "") !== undefined,
+    scripts: undefined as Awaited<ReturnType<typeof sandboxRuns.scripts>>,
+  };
+  if (sandbox.status !== "running") {
+    return view;
   }
-  if (sandbox === undefined) {
-    httpError(404, `There is no sandbox named ${name}.`);
+  const result = await orUserError(() =>
+    Promise.all([sandboxRuns.list(sandbox), sandboxRuns.scripts(sandbox)])
+  );
+  if (!result.ok) {
+    return { ...view, error: result.message };
   }
-  return sandbox;
+  const [list, scripts] = result.value;
+  return { ...view, list, scripts };
 };
 
 // Not rerun by the sidebar's polling, which would reset the notes being
@@ -47,49 +62,34 @@ export const load: PageServerLoad = async ({ depends, params }) => {
     ...inspection,
     maxNotesLength: MAX_NOTES_LENGTH,
     proxy: { elevate, listeners, suffixes },
+    // Streamed: asking the sandbox must not hold up the rest of the page.
+    runs: runsOf(sandbox),
     sandbox,
     sshSuffix: config.ssh.hostSuffix,
   };
-};
-
-/** The sandbox a form was submitted for: its name, and the id the page showed. */
-const targetOf = (form: FormData, name: string): Target | undefined => {
-  const id = form.get("id");
-  return typeof id === "string" ? { id, name } : undefined;
 };
 
 /** Hashes as the page saw the env files; none when it used no plan. */
 const hashesOf = (form: FormData) =>
   jsonField(hashesSchema, form.get("hashes") ?? "[]");
 
-const REPLACED = {
-  message:
-    "This sandbox was replaced by a new one with the same name. Reload the page.",
+/** A text field, or undefined when it is missing. */
+const field = (form: FormData, name: string) => {
+  const value = form.get(name);
+  return typeof value === "string" ? value : undefined;
 };
 
-/**
- * The sandbox a Git action was submitted for, if the name still belongs to
- * the one the page showed, or the failure to return.
- */
-const gitTargetOf = async (form: FormData, name: string) => {
-  const target = targetOf(form, name);
-  if (target === undefined) {
-    return { failure: fail(400, INCOMPLETE), ok: false } as const;
-  }
-  const sandbox = await findSandbox(name);
-  return sandbox.id === target.id
-    ? ({ ok: true, sandbox } as const)
-    : ({ failure: fail(409, REPLACED), ok: false } as const);
-};
+const runPage = (name: string, id: string) =>
+  `/sandboxes/${encodeURIComponent(name)}/runs/${encodeURIComponent(id)}`;
 
-/** Like `gitTargetOf`, with the branch and SHA the page showed. */
+/** Like `sandboxOf`, with the branch and SHA the page showed. */
 const branchActionOf = async (form: FormData, name: string) => {
   const branch = form.get("branch");
   const sha = form.get("sha");
   if (typeof branch !== "string" || typeof sha !== "string") {
     return { failure: fail(400, INCOMPLETE), ok: false } as const;
   }
-  const target = await gitTargetOf(form, name);
+  const target = await sandboxOf(form, name);
   return target.ok ? { ...target, branch, sha } : target;
 };
 
@@ -178,7 +178,7 @@ export const actions: Actions = {
   },
 
   refresh: async ({ params, request }) => {
-    const target = await gitTargetOf(await request.formData(), params.name);
+    const target = await sandboxOf(await request.formData(), params.name);
     if (!target.ok) {
       return target.failure;
     }
@@ -210,6 +210,60 @@ export const actions: Actions = {
     redirect(303, "/");
   },
 
+  rerun: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = await sandboxOf(form, params.name);
+    const run = field(form, "run");
+    if (!target.ok) {
+      return target.failure;
+    }
+    if (run === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().sandboxRuns.rerun(target.sandbox, run)
+    );
+    if (!result.ok) {
+      return result.failure;
+    }
+    redirect(303, runPage(params.name, result.value));
+  },
+
+  /** Starts a run and opens it: a command, a package.json script, or a prompt. */
+  run: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = await sandboxOf(form, params.name);
+    if (!target.ok) {
+      return target.failure;
+    }
+    const { sandbox } = target;
+    const { sandboxRuns } = getPanelContext();
+    const kind = field(form, "kind");
+    const result = await attempt(async () => {
+      if (kind === "script") {
+        return await sandboxRuns.startScript(
+          sandbox,
+          field(form, "script") ?? ""
+        );
+      }
+      if (kind === "prompt") {
+        return await sandboxRuns.startPrompt(
+          sandbox,
+          field(form, "prompt") ?? ""
+        );
+      }
+      return await sandboxRuns.start(
+        sandbox,
+        field(form, "command") ?? "",
+        field(form, "cwd") ?? sandbox.workspaces[0] ?? ""
+      );
+    });
+    if (!result.ok) {
+      return result.failure;
+    }
+    redirect(303, runPage(params.name, result.value));
+  },
+
   start: async ({ params, request }) => {
     const form = await request.formData();
     const target = targetOf(form, params.name);
@@ -232,5 +286,21 @@ export const actions: Actions = {
       getPanelContext().lifecycle.stop(target)
     );
     return result.ok ? { stopped: true } : result.failure;
+  },
+
+  stopRun: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = await sandboxOf(form, params.name);
+    const run = field(form, "run");
+    if (!target.ok) {
+      return target.failure;
+    }
+    if (run === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().sandboxRuns.stop(target.sandbox, run)
+    );
+    return result.ok ? { stopped: run } : result.failure;
   },
 };

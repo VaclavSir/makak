@@ -16,6 +16,7 @@ import type { PanelApp } from "../server/panel.ts";
 import { createProxyServer } from "../server/proxy/proxy.ts";
 import type { ProxyServer } from "../server/proxy/proxy.ts";
 import { createSandboxGit } from "../server/sandbox-git.ts";
+import { createSandboxRuns } from "../server/sandbox-runs.ts";
 import { createSandboxes } from "../server/sandboxes.ts";
 import type { Sandboxes } from "../server/sandboxes.ts";
 import { createSandboxStore } from "../server/state.ts";
@@ -212,6 +213,10 @@ export const start = async (options: StartOptions): Promise<void> => {
       store,
     }),
     sandboxGit,
+    sandboxRuns: createSandboxRuns({
+      projects: config.runs.projects,
+      runs: tools.runs,
+    }),
     sandboxes,
     store,
     tools,

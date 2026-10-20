@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CommandError, exec, execChecked } from "./exec.ts";
+import { CommandError, exec, execChecked, stream } from "./exec.ts";
 import type { CommandResult, Exec } from "./exec.ts";
 import { createFakeSbx, createFakeTools, createTools } from "./index.ts";
 
@@ -45,6 +45,41 @@ describe(exec, () => {
 
 const failing: Exec = () =>
   Promise.resolve({ exitCode: 1, stderr: "no such sandbox\n", stdout: "" });
+
+/** Node running a script, streamed. */
+const node = (script: string) => stream(process.execPath, ["-e", script]);
+
+describe(stream, () => {
+  it("passes on the output as it comes", async () => {
+    await expect(
+      new Response(
+        node("process.stdout.write('a'); process.stdout.write('b')")
+      ).text()
+    ).resolves.toBe("ab");
+  });
+
+  it("errors with stderr when the command fails", async () => {
+    await expect(
+      new Response(
+        node("process.stderr.write('no run x'); process.exit(2)")
+      ).text()
+    ).rejects.toThrow(`\`${process.execPath}\` failed: no run x`);
+  });
+
+  it("can be cancelled while the command runs, without errors after", async () => {
+    const reader = node(
+      "process.stdout.write('first'); setInterval(() => process.stdout.write('more'), 10)"
+    ).getReader();
+    const { value } = await reader.read();
+    expect(new TextDecoder().decode(value)).toBe("first");
+    await reader.cancel();
+    // The command's exit, after the cancel, must not touch the stream.
+    // oxlint-disable-next-line promise/avoid-new -- waits for the exit
+    await new Promise((resolve) => {
+      setTimeout(resolve, 200);
+    });
+  });
+});
 
 describe(execChecked, () => {
   it("rejects on a non-zero exit, with stderr", async () => {

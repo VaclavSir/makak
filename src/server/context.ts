@@ -1,6 +1,7 @@
 import type { Config } from "./config.ts";
 import type { Lifecycle } from "./lifecycle.ts";
 import type { SandboxGit } from "./sandbox-git.ts";
+import type { SandboxRuns } from "./sandbox-runs.ts";
 import type { Sandboxes } from "./sandboxes.ts";
 import type { SandboxStore } from "./state.ts";
 import type { Tools } from "./tools/index.ts";
@@ -10,6 +11,7 @@ export interface PanelContext {
   config: Config;
   lifecycle: Lifecycle;
   sandboxGit: SandboxGit;
+  sandboxRuns: SandboxRuns;
   sandboxes: Sandboxes;
   store: SandboxStore;
   tools: Tools;

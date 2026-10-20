@@ -42,6 +42,17 @@ A full example, with the defaults where there are any:
   },
   "envDir": "~/makak/envs",
   "handoffsDir": "~/makak/handoffs",
+  "runs": {
+    "projects": [
+      {
+        "path": "~/Projects/shop",
+        "commands": [
+          { "label": "Start", "command": "npm start" },
+          { "label": "Test", "command": "npm test" }
+        ]
+      }
+    ]
+  },
   "ssh": { "hostSuffix": ".sbx" },
   "stateDir": "~/makak/state"
 }
@@ -63,6 +74,9 @@ A full example, with the defaults where there are any:
 | `proxy.tls.cert`, `proxy.tls.key` | `~/makak/tls/sandboxes.pem`, `~/makak/tls/sandboxes-key.pem` | Wildcard certificate for every suffix; see [setup](setup.md#reverse-proxy). Read only when there are listeners. |
 | `envDir` | `~/makak/envs` | The env directory: the `*.sbxenv.yaml` files to create sandboxes from; see [env files](env-files.md). |
 | `handoffsDir` | `~/makak/handoffs` | Where each sandbox's handoff directory lives. |
+| `runs.projects` | `[]` | Commands offered as buttons on the page of every sandbox with that project as a workspace; see [runs](architecture.md#runs). |
+| `runs.projects[].path` |  | The project, as the sandbox's workspace path on the host. |
+| `runs.projects[].commands` |  | `label` is the button's text; `command` is run with bash in the project's directory. |
 | `ssh.hostSuffix` | `.sbx` | The suffix of the SSH host pattern `sbx setup ssh` wrote (`*.sbx` unless you passed `--alias`). The Panel shows `<sandbox>.sbx` as the SSH host. |
 | `stateDir` | `~/makak/state` | Where the Panel keeps its own data: sandbox notes, and the env files and args each sandbox was created with. |
 

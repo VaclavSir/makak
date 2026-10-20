@@ -6,14 +6,23 @@ import {
   exec as realExec,
   execChecked,
   firstLine,
+  stream as realStream,
 } from "./exec.ts";
-import type { CommandResult, Exec } from "./exec.ts";
+import type { CommandResult, Exec, Stream } from "./exec.ts";
 import { createFakeGit, createGit } from "./git.ts";
 import type { Git } from "./git.ts";
+import {
+  createFakeRuns,
+  createRuns,
+  RUN_HELPER,
+  RUN_TIMEOUT_MS,
+} from "./runs.ts";
+import type { Runs } from "./runs.ts";
 import { FAKE_SANDBOXES, parseSandboxList } from "./sbx.ts";
 import type { EnvSpec, Sandbox } from "./sbx.ts";
 
 export type { Commit, Git, Ref } from "./git.ts";
+export type { PackageScripts, Run, Runs } from "./runs.ts";
 export type { EnvSpec, Sandbox } from "./sbx.ts";
 
 // Thin wrappers over host tools. Each method maps to one command, and
@@ -49,8 +58,22 @@ export interface Browser {
 export interface Tools {
   browser: Browser;
   git: Git;
+  /** Commands run in sandboxes, through `sbx exec`. */
+  runs: Runs;
   sbx: Sbx;
 }
+
+/** `sbx exec` running the run helper; `--` so no name is read as a flag. */
+const helperArgs = (sandbox: string, args: string[]) => [
+  "exec",
+  "--",
+  sandbox,
+  "sh",
+  "-c",
+  RUN_HELPER,
+  "makak-run",
+  ...args,
+];
 
 // A wedged sbx daemon must not hang every page load.
 const SBX_LIST_TIMEOUT_MS = 15_000;
@@ -104,7 +127,8 @@ const browserCommand = (platform: NodeJS.Platform): string | undefined => {
 
 export const createTools = (
   exec: Exec = realExec,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  stream: Stream = realStream
 ): Tools => ({
   browser: {
     open: async (url) => {
@@ -116,6 +140,12 @@ export const createTools = (
     },
   },
   git: createGit(exec),
+  runs: createRuns({
+    exec: (sandbox, args) =>
+      exec("sbx", helperArgs(sandbox, args), { timeoutMs: RUN_TIMEOUT_MS }),
+    stream: (sandbox, args, signal) =>
+      stream("sbx", helperArgs(sandbox, args), { signal }),
+  }),
   sbx: {
     envPlan: async (spec) =>
       await sbx(exec, ["env", "plan", ...envArgs(spec)], SBX_PLAN_TIMEOUT_MS),
@@ -229,5 +259,6 @@ export const createFakeSbx = (): Sbx => {
 export const createFakeTools = (browser = createTools().browser): Tools => ({
   browser,
   git: createFakeGit(),
+  runs: createFakeRuns(),
   sbx: createFakeSbx(),
 });

@@ -77,8 +77,10 @@ No work is lost without warning.
 
 Non-interactive commands and prompts without a terminal.
 
-- In-sandbox run helper, delivered by a kit, that runs commands detached and records the command, PID, log and exit code.
-- Predefined and arbitrary commands, plus one-shot agent prompts.
+**Status: done.** Checked against a real `sbx` on 2026-10-20. See [runs](architecture.md#runs).
+
+- In-sandbox run helper, passed by the Panel with every `sbx exec`, that runs commands detached and records the command, PID, log and exit code.
+- Commands configured per project, `package.json` scripts, arbitrary commands, and one-shot agent prompts.
 - Output streamed to the browser, with status, stop and rerun. Survives Panel restarts.
 
 **Done when:** `npm start` can be launched, watched, stopped and rerun from the Panel, and is still visible after the Panel restarts.

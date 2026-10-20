@@ -30,13 +30,12 @@ export type Attempt<T> =
   | { failure: ActionFailure<{ message: string }>; ok: false };
 
 /**
- * Runs a change, turning the errors meant for the user, such as a failed
- * `sbx` command, into a 400 with their message. Anything else is a bug and
- * is thrown.
+ * Runs something, turning the errors meant for the user, such as a failed
+ * `sbx` command, into their message. Anything else is a bug and is thrown.
  */
-export const attempt = async <T>(
+export const orUserError = async <T>(
   run: () => Promise<T>
-): Promise<Attempt<T>> => {
+): Promise<{ message: string; ok: false } | { ok: true; value: T }> => {
   try {
     return { ok: true, value: await run() };
   } catch (error) {
@@ -44,8 +43,18 @@ export const attempt = async <T>(
     if (message === undefined) {
       throw error;
     }
-    return { failure: fail(400, { message }), ok: false };
+    return { message, ok: false };
   }
+};
+
+/** Like `orUserError`, for a form action: the message comes with a 400. */
+export const attempt = async <T>(
+  run: () => Promise<T>
+): Promise<Attempt<T>> => {
+  const result = await orUserError(run);
+  return result.ok
+    ? result
+    : { failure: fail(400, { message: result.message }), ok: false };
 };
 
 export const INCOMPLETE = { message: "The form is incomplete." };

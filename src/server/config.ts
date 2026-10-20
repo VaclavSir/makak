@@ -101,6 +101,25 @@ const configSchema = z
           .prefault({}),
       })
       .prefault({}),
+    runs: z
+      .strictObject({
+        projects: z
+          .array(
+            z.strictObject({
+              commands: z
+                .array(
+                  z.strictObject({
+                    command: z.string().min(1),
+                    label: z.string().min(1),
+                  })
+                )
+                .min(1),
+              path: hostPath,
+            })
+          )
+          .default([]),
+      })
+      .prefault({}),
     ssh: z
       .strictObject({
         hostSuffix: z

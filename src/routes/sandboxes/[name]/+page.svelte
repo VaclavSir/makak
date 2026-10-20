@@ -5,6 +5,7 @@
   import GitStatus from "#lib/components/git-status.svelte";
   import NotesForm from "#lib/components/notes-form.svelte";
   import ProxyAddresses from "#lib/components/proxy-addresses.svelte";
+  import RunsPanel from "#lib/components/runs-panel.svelte";
   import SandboxActions from "#lib/components/sandbox-actions.svelte";
   import StatusDot from "#lib/components/status-dot.svelte";
   import { SANDBOX_PAGE } from "#lib/dependencies.ts";
@@ -26,6 +27,38 @@
   );
   const sandbox = $derived(replaced ? undefined : current);
   const commands = $derived(sandboxCommands(data.sandbox.name, data.sshSuffix));
+
+  // Runs arrive after the page, since the sandbox is asked for them. The last
+  // answer stays shown while a newer one comes, so the section doesn't blink.
+  let loaded = $state<
+    { for: string; value: Awaited<typeof data.runs> } | undefined
+  >();
+  let runsFailed = $state(false);
+  const runs = $derived(
+    loaded?.for === data.sandbox.id ? loaded.value : undefined
+  );
+  $effect(() => {
+    const pending = data.runs;
+    const forId = data.sandbox.id;
+    let latest = true;
+    const settle = async () => {
+      try {
+        const value = await pending;
+        if (latest) {
+          loaded = { for: forId, value };
+          runsFailed = false;
+        }
+      } catch {
+        if (latest) {
+          runsFailed = true;
+        }
+      }
+    };
+    void settle();
+    return () => {
+      latest = false;
+    };
+  });
 </script>
 
 <svelte:head>
@@ -105,6 +138,24 @@
         <li><code>{workspace}</code></li>
       {/each}
     </ul>
+  {/if}
+
+  <h2>Runs</h2>
+  {#if runsFailed}
+    <p class="error">Can't list the runs. Reload the page to try again.</p>
+  {:else if runs === undefined}
+    <p class="muted">Asking the sandbox…</p>
+  {:else}
+    {#key data.sandbox.id}
+      <RunsPanel
+        agent={sandbox.agent}
+        id={data.sandbox.id}
+        name={data.sandbox.name}
+        {runs}
+        running={sandbox.status === "running"}
+        workspaces={sandbox.workspaces}
+      />
+    {/key}
   {/if}
 
   {#if data.git !== undefined}

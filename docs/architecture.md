@@ -124,6 +124,18 @@ flowchart LR
 
 The proxy serves sandbox hostnames only. It never sees the Panel's cookie, which is host-only and on another domain, and the Panel's hostname is required to be outside the sandbox suffixes.
 
+## Runs
+
+Commands run in a sandbox without a terminal, from the Panel: the buttons configured for its project (`runs.projects`), its main workspace's `package.json` scripts, anything typed, and one-shot prompts to its agent (`claude -p --`, `codex exec --`, so a prompt starting with a dash is never read as an option). The Panel owns none of them; restarting it, or reloading the page, loses nothing.
+
+- **The helper.** `src/server/tools/run-helper.sh` runs in the sandbox, passed to `sh -c` with every `sbx exec`, so nothing is installed and it always matches the Panel. It keeps each run under `~/.local/state/makak/runs/<id>/` in the sandbox: the command, its directory, its process, its log, and its exit code.
+- **Running.** The command runs with `bash -l`, in a session of its own, so it outlives `sbx exec`, and stopping its process group reaches everything it started. A waiter records the exit code, also after a stop. Stop sends TERM, then KILL after five seconds. A run whose process is gone without an exit code, such as when its sandbox stopped, is shown as lost; the sandbox's boot id tells a restart apart from a reused process id.
+- **No terminal.** Runs get no terminal, so tools that check for one print plain output. `COLUMNS` and `LINES` say the size the browser shows them at, 120 by 40, and the browser shows the log in a read-only terminal (xterm.js), so the progress bars and colours of the tools that don't check show as in a terminal.
+- **Untrusted output.** The log is whatever the command printed, which the sandbox controls. The terminal never runs it as HTML, sends nothing it would answer back, opens declared links only on a click and after a confirmation, and has no clipboard access.
+- **Streaming.** `GET /sandboxes/<name>/runs/<id>/log?from=<offset>&follow=1` streams the log's raw bytes from a disposable `tail` in the sandbox, until the run ends or the browser goes away, and for at most five minutes, in case ending `sbx exec` doesn't end the `tail` in the sandbox. The browser resumes from the offset it reached whenever a stream ends while the run still runs, and reads once more after it ends. A helper that fails at once, such as for a run that doesn't exist, is an error response, not an empty log. A finished run's log is read once. A long log is replayed only from its last 2 MB.
+- **The sandbox page** gets its runs after the rest of the page, streamed, so asking the sandbox never holds it up.
+- **Where it runs.** In the sandbox, at the workspace's path, which clone mode keeps the same as on the host. Only a running sandbox can be asked; its runs are kept in it while it is stopped.
+
 ## Tool adapters
 
 All host commands go through `src/server/tools/`. Commands are spawned with argument arrays and never through a shell, so sandbox and branch names are never interpreted. Each tool has a fake, selected with `makak start --fake`, so the Panel runs and tests pass without `sbx`.
