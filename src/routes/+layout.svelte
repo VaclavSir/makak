@@ -60,7 +60,7 @@
             >
               <StatusDot status={sandbox.status} />
               <span class="name">{sandbox.name}</span>
-              <span class="status">{sandbox.status}</span>
+              <span class="visually-hidden">({sandbox.status})</span>
             </a>
           </li>
         {/each}
@@ -128,7 +128,7 @@
 
   li a {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.5rem;
     border-radius: 6px;
     padding: 0.35rem 0.5rem;
@@ -145,17 +145,25 @@
     font-weight: 600;
   }
 
-  .name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* Centred on the name's first line. */
+  li a :global(.dot) {
+    margin-top: calc((1lh - 0.55rem) / 2);
   }
 
-  .status {
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: normal;
+  /* Long names wrap: names often share a prefix, so the ending matters. */
+  .name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .empty {
