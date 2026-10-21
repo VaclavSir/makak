@@ -68,7 +68,7 @@ SvelteKit's server code is bundled separately (or, in dev, loaded by Vite), so i
 
 ## Sandboxes and Panel state
 
-The sandbox list comes from `sbx ls --json`, which includes the published ports. Its format is undocumented, so the parser (`src/server/tools/sbx.ts`) requires only the name, id and status, and ignores fields it doesn't know. A listing is shared by concurrent requests and reused for two seconds, because every open tab polls it every five.
+The sandbox list comes from `sbx ls --json`, which includes the published ports. Its format is undocumented, so the parser (`src/server/tools/sbx.ts`) requires only the name, id and status, and ignores fields it doesn't know. A listing is shared by concurrent requests and reused for two seconds, because every open tab polls it every five. The sidebar sorts it in the browser, newest first unless another order is chosen there; the choice is remembered in that browser only.
 
 What the Panel knows that `sbx` doesn't, such as notes and how it created a sandbox, lives in `<stateDir>/sandboxes.json`, keyed by sandbox id rather than name: a name can be reused by an unrelated sandbox after `sbx rm`. The file is written whole, through a rename, and never overwritten when it can't be parsed.
 

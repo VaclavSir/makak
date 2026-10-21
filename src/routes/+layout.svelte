@@ -4,14 +4,48 @@
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
+  import { onMount } from "svelte";
   import favicon from "#lib/assets/favicon.svg";
   import StatusDot from "#lib/components/status-dot.svelte";
   import { SANDBOXES } from "#lib/dependencies.ts";
+  import {
+    DEFAULT_ORDER,
+    parseOrder,
+    SANDBOX_ORDERS,
+    sortSandboxes,
+  } from "#lib/sandbox-order.ts";
+  import type { SandboxOrder } from "#lib/sandbox-order.ts";
   import type { LayoutProps } from "./$types";
 
   const REFRESH_MS = 5000;
+  const ORDER_KEY = "makak:sandbox-order";
 
   let { children, data }: LayoutProps = $props();
+
+  let order = $state<SandboxOrder>(DEFAULT_ORDER);
+  const sorted = $derived(
+    data.sandboxes === undefined
+      ? undefined
+      : sortSandboxes(data.sandboxes, order)
+  );
+
+  // Remembered in this browser only; without storage, it is the default.
+  onMount(() => {
+    try {
+      order = parseOrder(localStorage.getItem(ORDER_KEY));
+    } catch {
+      // No storage.
+    }
+  });
+
+  const choose = (value: SandboxOrder) => {
+    order = value;
+    try {
+      localStorage.setItem(ORDER_KEY, value);
+    } catch {
+      // As above.
+    }
+  };
 
   const refresh = () => {
     if (document.visibilityState === "visible") {
@@ -37,20 +71,33 @@
 <div class="shell">
   <nav>
     <a class="home" href={resolve("/")}>Makak Panel</a>
-    <h2>Sandboxes</h2>
+    <div class="heading">
+      <h2>Sandboxes</h2>
+      <select
+        aria-label="Order sandboxes by"
+        value={order}
+        onchange={(event) => {
+          choose(parseOrder(event.currentTarget.value));
+        }}
+      >
+        {#each SANDBOX_ORDERS as { label, value } (value)}
+          <option {value}>{label}</option>
+        {/each}
+      </select>
+    </div>
     <a
       class="new"
       href={resolve("/new")}
       aria-current={page.route.id === "/new" ? "page" : undefined}
       >+ New sandbox</a
     >
-    {#if data.sandboxes === undefined}
+    {#if sorted === undefined}
       <p class="error">{data.sbxError}</p>
-    {:else if data.sandboxes.length === 0}
+    {:else if sorted.length === 0}
       <p class="empty">No sandboxes yet.</p>
     {:else}
       <ul>
-        {#each data.sandboxes as sandbox (sandbox.id)}
+        {#each sorted as sandbox (sandbox.id)}
           <li>
             <a
               href={resolve("/sandboxes/[name]", { name: sandbox.name })}
@@ -98,8 +145,30 @@
     text-decoration: none;
   }
 
+  .heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 1.25rem 0.5rem 0.5rem;
+  }
+
   nav h2 {
-    margin: 1.5rem 0.5rem 0.5rem;
+    margin: 0;
+  }
+
+  .heading select {
+    min-width: 0;
+    border-color: transparent;
+    background: transparent;
+    padding: 0.1rem 0.25rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .heading select:hover,
+  .heading select:focus-visible {
+    border-color: var(--border);
   }
 
   .new {

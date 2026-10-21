@@ -23,7 +23,7 @@ Replaces `sbx ls` and a notepad.
 
 **Status: done.** Checked against a real `sbx` on 2026-10-18.
 
-- Sidebar of all sandboxes, with status, auto-refreshed.
+- Sidebar of all sandboxes, with status, auto-refreshed, ordered by creation, last use or name, as chosen in the browser.
 - Overview: published ports, workspace, copyable terminal commands (`sbx run`, `sbx exec`), SSH host.
 - Notes per sandbox, the first Panel-side metadata, stored on the host.
 - Panel-created sandboxes marked as managed; all others shown as unmanaged.
