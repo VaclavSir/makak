@@ -34,6 +34,13 @@ describe(sandboxCommands, () => {
   it("uses the configured SSH suffix", () => {
     expect(sandboxCommands("a", ".box").at(-1)?.value).toBe("a.box");
   });
+
+  it("ends with the main workspace's path, when it has one", () => {
+    expect(
+      sandboxCommands("a", ".sbx", ["/p/shop:ro", "/p/docs"]).at(-1)
+    ).toStrictEqual({ label: "Workspace", value: "/p/shop" });
+    expect(sandboxCommands("a", ".sbx", [])).toHaveLength(3);
+  });
 });
 
 describe(publishCommand, () => {

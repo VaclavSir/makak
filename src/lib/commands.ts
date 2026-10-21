@@ -19,17 +19,26 @@ export interface SandboxCommand {
 export const runCommand = (name: string): string =>
   command("sbx", "run", "--name", name);
 
+/** A workspace as sbx lists it, without its `:ro` mode. */
+export const workspacePath = (workspace: string): string =>
+  workspace.replace(/:ro$/u, "");
+
 /**
- * Terminal commands and the SSH host for a sandbox. `sshSuffix` matches the
- * host pattern `sbx setup ssh` wrote, `*.sbx` by default.
+ * Terminal commands, the SSH host and the main workspace's path, the same
+ * inside the sandbox, for a sandbox. `sshSuffix` matches the host pattern
+ * `sbx setup ssh` wrote, `*.sbx` by default.
  */
 export const sandboxCommands = (
   name: string,
-  sshSuffix: string
+  sshSuffix: string,
+  workspaces: readonly string[] = []
 ): SandboxCommand[] => [
   { label: "Attach the agent", value: runCommand(name) },
   { label: "Open a shell", value: command("sbx", "exec", "-it", name, "bash") },
   { label: "SSH host", value: `${name}${sshSuffix}` },
+  ...(workspaces[0] === undefined
+    ? []
+    : [{ label: "Workspace", value: workspacePath(workspaces[0]) }]),
 ];
 
 /** Publishes a sandbox port; without one, `<port>` is left to fill in. */

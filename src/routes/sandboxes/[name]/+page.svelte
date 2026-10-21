@@ -14,7 +14,9 @@
 
   const runs = getRunsContext();
   const sandbox = $derived(liveSandbox(data.sandbox, data.sandboxes).sandbox);
-  const commands = $derived(sandboxCommands(data.sandbox.name, data.sshSuffix));
+  const commands = $derived(
+    sandboxCommands(data.sandbox.name, data.sshSuffix, data.sandbox.workspaces)
+  );
 </script>
 
 <svelte:head>
