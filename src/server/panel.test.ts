@@ -65,6 +65,7 @@ describe("Panel server", () => {
   let origin: string;
   let port: number;
   let reached: string[];
+  let reachedMcp: string[];
   let server: Server;
 
   const send = async ({
@@ -134,11 +135,18 @@ describe("Panel server", () => {
     auth = createAuth();
     const recorded = recordingApp();
     ({ reached } = recorded);
+    reachedMcp = [];
     server = createPanelServer({
       app: recorded.app,
       auth,
       hostname: HOSTNAME,
       log: () => {},
+      mcp: {
+        handle: (req, res, url) => {
+          reachedMcp.push(`${req.method} ${url.pathname}`);
+          res.end("mcp");
+        },
+      },
       port,
       tls: await selfSignedCert(HOSTNAME),
     });
@@ -148,6 +156,45 @@ describe("Panel server", () => {
 
   afterAll(() => {
     server.close();
+  });
+
+  describe("MCP endpoints", () => {
+    it("take requests without a session or an Origin, apart from the app", async () => {
+      reached.length = 0;
+      reachedMcp.length = 0;
+      const res = await send({ method: "POST", path: "/mcp/gitlab/feature-a" });
+      expect(res.body).toBe("mcp");
+      expect(reachedMcp).toStrictEqual(["POST /mcp/gitlab/feature-a"]);
+      expect(reached).toStrictEqual([]);
+    });
+
+    it("refuse a browser on another site, and a foreign Host", async () => {
+      reachedMcp.length = 0;
+      await expect(
+        statusOf({
+          method: "POST",
+          origin: "https://evil.test",
+          path: "/mcp/gitlab/feature-a",
+        })
+      ).resolves.toBe(403);
+      await expect(
+        statusOf({
+          host: "evil.test",
+          method: "POST",
+          path: "/mcp/gitlab/feature-a",
+        })
+      ).resolves.toBe(421);
+      expect(reachedMcp).toStrictEqual([]);
+    });
+
+    it("are only what is under /mcp/", async () => {
+      reachedMcp.length = 0;
+      await expect(
+        statusOf({ method: "POST", path: "/mcpx/gitlab" })
+      ).resolves.toBe(403);
+      await expect(statusOf({ path: "/mcp" })).resolves.toBe(401);
+      expect(reachedMcp).toStrictEqual([]);
+    });
   });
 
   it("asks for a login without a session, and never reaches the app", async () => {

@@ -91,12 +91,11 @@ Non-interactive commands and prompts without a terminal.
 The only gate on the MCP channel.
 
 - One endpoint per (server, sandbox), on the Panel's domain, with the sandbox identified by its token.
-- Allowlisted tools pass through; others are held open with progress heartbeats until approved or denied.
+- Allowlisted tools pass through; others are held until approved or denied, and the agent is told to call again when nobody decided in time.
 - Global approval queue: readable payloads, **allow once** / **always allow**, the requesting sandbox named, and a notification while anything is pending.
 - Audit log of all calls.
-- Per-sandbox registration through env files, with tokens kept in sbx secrets.
+- Per-sandbox registration, with tokens kept in sbx secrets. Env files can't set an MCP server's headers, so the Panel registers them itself.
 - Static MCP: `--static-mcp` can't be set from env files, so find another way to apply it, or warn about sandboxes without it.
-- Experiment, done first: confirm the sbx gateway forwards progress notifications. This decides how holds work.
 
 **Done when:** a mutating GitLab tool call from a sandbox waits for approval in the Panel, and read-only calls go straight through.
 

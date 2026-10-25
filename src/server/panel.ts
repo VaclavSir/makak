@@ -12,6 +12,8 @@ import {
 } from "./auth.ts";
 import type { Auth } from "./auth.ts";
 import { refuseUpgrade } from "./http.ts";
+import { MCP_PATH } from "./mcp/proxy.ts";
+import type { McpProxy } from "./mcp/proxy.ts";
 import { allowedHosts, checkRequest, isLoopback } from "./security.ts";
 import type { Expectations } from "./security.ts";
 
@@ -27,6 +29,8 @@ export interface PanelServerOptions {
   auth: Auth;
   hostname: string;
   log: (message: string) => void;
+  /** The MCP endpoints, which take a bearer token instead of a session. */
+  mcp?: McpProxy;
   port: number;
   tls: { cert: Buffer | string; key: Buffer | string };
 }
@@ -89,6 +93,7 @@ export const createPanelServer = ({
   auth,
   hostname,
   log,
+  mcp,
   port,
   tls,
 }: PanelServerOptions): Server => {
@@ -98,9 +103,10 @@ export const createPanelServer = ({
     origin,
   };
 
-  const verdictFor = (req: IncomingMessage, upgrade: boolean) =>
+  const verdictFor = (req: IncomingMessage, upgrade: boolean, bearer = false) =>
     checkRequest(
       {
+        bearer,
         host: req.headers.host,
         method: req.method,
         origin: req.headers.origin,
@@ -138,17 +144,25 @@ export const createPanelServer = ({
       res.setHeader(name, value);
     }
 
-    const verdict = verdictFor(req, false);
+    // A request target that is not a valid URL must not take the process down.
+    const url = URL.parse(req.url ?? "/", origin);
+    const bearer = url?.pathname.startsWith(MCP_PATH) ?? false;
+    const verdict = verdictFor(req, false, bearer);
     if (!verdict.ok) {
       log(`Rejected ${req.method} ${req.url}: ${verdict.reason}`);
       sendText(res, verdict.status, STATUS_CODES[verdict.status] ?? "Error");
       return;
     }
-
-    // A request target that is not a valid URL must not take the process down.
-    const url = URL.parse(req.url ?? "/", origin);
     if (url === null) {
       sendText(res, 400, "Bad Request");
+      return;
+    }
+    if (bearer) {
+      if (mcp === undefined) {
+        sendText(res, 404, "Not Found");
+      } else {
+        mcp.handle(req, res, url);
+      }
       return;
     }
     if (url.pathname === LOGIN_PATH) {

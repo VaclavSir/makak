@@ -1,0 +1,417 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { Readable } from "node:stream";
+import type { ReadableStream } from "node:stream/web";
+
+import type { Approvals, Outcome } from "./approvals.ts";
+import type { Audit, AuditEntry } from "./audit.ts";
+import type { McpStore, Registration } from "./store.ts";
+
+// The MCP approval proxy: one endpoint per (server, sandbox), at
+// `/mcp/<server>/<sandbox>`, passing everything through to the server except
+// tool calls off the allowlist, which wait for the user. The sandbox is the
+// one the bearer token was issued to; the path only has to agree with it.
+
+/** Reserved for the endpoints: no page of the Panel may live under it. */
+export const MCP_PATH = "/mcp/";
+
+/** A wrapped server, with its upstream headers resolved. */
+export interface McpServer {
+  allow: readonly string[];
+  headers: Record<string, string>;
+  holdMs: number;
+  name: string;
+  url: string;
+}
+
+export interface McpProxyOptions {
+  approvals: Approvals;
+  audit: Audit;
+  /** The sandbox now called this, to tell a removed one's token apart. */
+  findSandbox: (name: string) => Promise<{ id: string } | undefined>;
+  log: (message: string) => void;
+  servers: readonly McpServer[];
+  store: Pick<McpStore, "allowed" | "identify">;
+  fetch?: typeof fetch;
+  now?: () => number;
+}
+
+export interface McpProxy {
+  handle: (req: IncomingMessage, res: ServerResponse, url: URL) => void;
+}
+
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+// What passes between the gateway and the server. Not the gateway's
+// Authorization: that is the sandbox's token, for the Panel only.
+const REQUEST_HEADERS = [
+  "accept",
+  "content-type",
+  "last-event-id",
+  "mcp-protocol-version",
+  "mcp-session-id",
+];
+// Not WWW-Authenticate: the server's auth is the Panel's business, and the
+// gateway would try to sign in to it.
+const RESPONSE_HEADERS = [
+  "cache-control",
+  "content-type",
+  "mcp-protocol-version",
+  "mcp-session-id",
+];
+
+interface Message {
+  id?: unknown;
+  method?: unknown;
+  params?: unknown;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isToolCall = (message: unknown) =>
+  isRecord(message) && message.method === "tools/call" && "id" in message;
+
+const sendJson = (res: ServerResponse, status: number, body: unknown) => {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(body));
+};
+
+const sendError = (res: ServerResponse, status: number, message: string) => {
+  sendJson(res, status, {
+    error: { code: -32_600, message },
+    id: null,
+    jsonrpc: "2.0",
+  });
+};
+
+/** A tool result the agent reads as an error, rather than a protocol error. */
+const sendToolError = (res: ServerResponse, id: unknown, text: string) => {
+  sendJson(res, 200, {
+    id,
+    jsonrpc: "2.0",
+    result: { content: [{ text, type: "text" }], isError: true },
+  });
+};
+
+class TooLargeError extends Error {
+  override name = "TooLargeError";
+}
+
+const readBody = async (req: IncomingMessage) => {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) {
+      throw new TooLargeError();
+    }
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+};
+
+/** `/mcp/<server>/<sandbox>`, decoded, or undefined for any other path. */
+const endpointOf = (pathname: string) => {
+  const parts = pathname.slice(MCP_PATH.length).split("/");
+  if (parts.length !== 2) {
+    return;
+  }
+  let server: string;
+  let sandbox: string;
+  try {
+    [server = "", sandbox = ""] = parts.map(decodeURIComponent);
+  } catch {
+    return;
+  }
+  return server === "" || sandbox === "" ? undefined : { sandbox, server };
+};
+
+const bearerOf = (header: string | undefined) => {
+  const match = /^Bearer (?<token>\S+)$/u.exec(header ?? "");
+  return match?.groups?.token;
+};
+
+const heldText = (tool: string, id: string) =>
+  `This call to ${tool} needs the user's approval in Makak Panel, where it is waiting as request ${id}. The user has not decided yet. To wait for the decision, make the same call again with exactly the same arguments: it goes through as soon as the user approves it. Don't try to get the same effect another way.`;
+
+const deniedText = (tool: string) =>
+  `The user denied this call to ${tool} in Makak Panel.`;
+
+export const createMcpProxy = ({
+  approvals,
+  audit,
+  fetch: fetchUpstream = fetch,
+  findSandbox,
+  log,
+  now = Date.now,
+  servers,
+  store,
+}: McpProxyOptions): McpProxy => {
+  const byName = new Map(servers.map((server) => [server.name, server]));
+
+  /** False when the entry couldn't be written. */
+  const record = async (entry: AuditEntry) => {
+    try {
+      await audit.record(entry);
+      return true;
+    } catch (error) {
+      log(`Could not write the MCP audit log: ${(error as Error).message}`);
+      return false;
+    }
+  };
+
+  /** Who is calling, or the response already sent to refuse them. */
+  const identify = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    endpoint: { sandbox: string; server: string }
+  ): Promise<Registration | undefined> => {
+    const token = bearerOf(req.headers.authorization);
+    const registration =
+      token === undefined ? undefined : await store.identify(token);
+    if (registration === undefined) {
+      res.setHeader("WWW-Authenticate", "Bearer");
+      sendError(res, 401, "Missing or unknown token");
+      return;
+    }
+    if (
+      registration.server !== endpoint.server ||
+      registration.sandbox !== endpoint.sandbox
+    ) {
+      log(
+        `Refused MCP request to ${endpoint.server}/${endpoint.sandbox} with the token of ${registration.server}/${registration.sandbox}`
+      );
+      sendError(res, 403, "This token is for another endpoint");
+      return;
+    }
+    let current: { id: string } | undefined;
+    try {
+      current = await findSandbox(registration.sandbox);
+    } catch (error) {
+      log(`MCP request refused, sbx failed: ${(error as Error).message}`);
+      sendError(res, 503, "The Panel can't list sandboxes right now");
+      return;
+    }
+    if (current?.id !== registration.sandboxId) {
+      log(
+        `Refused MCP request to ${endpoint.server}/${endpoint.sandbox}: the token belongs to a removed sandbox of that name`
+      );
+      sendError(res, 403, "This token belongs to a removed sandbox");
+      return;
+    }
+    return registration;
+  };
+
+  /** Passes the request on, and the response back. */
+  const forward = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    server: McpServer,
+    body: string | undefined,
+    signal: AbortSignal
+  ): Promise<void> => {
+    const headers: Record<string, string> = {};
+    for (const name of REQUEST_HEADERS) {
+      const value = req.headers[name];
+      if (typeof value === "string") {
+        headers[name] = value;
+      }
+    }
+    Object.assign(headers, server.headers);
+
+    const response = await fetchUpstream(server.url, {
+      body,
+      headers,
+      method: req.method,
+      // A redirect is passed back, never followed with the server's headers.
+      redirect: "manual",
+      signal,
+    });
+    const passed: Record<string, string> = {};
+    for (const name of RESPONSE_HEADERS) {
+      const value = response.headers.get(name);
+      if (value !== null) {
+        passed[name] = value;
+      }
+    }
+    res.writeHead(response.status, passed);
+    if (response.body === null) {
+      res.end();
+    } else {
+      Readable.fromWeb(response.body as ReadableStream).pipe(res);
+    }
+  };
+
+  /** A tool call: let through, or held until the user decides. */
+  const call = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    context: {
+      body: string;
+      message: Message;
+      registration: Registration;
+      server: McpServer;
+      signal: AbortSignal;
+    }
+  ) => {
+    const { body, message, registration, server, signal } = context;
+    const params = isRecord(message.params) ? message.params : {};
+    const tool = params.name;
+    if (typeof tool !== "string") {
+      sendError(res, 400, "tools/call needs a tool name");
+      return;
+    }
+    const started = now();
+    const base = {
+      arguments: params.arguments,
+      at: new Date(started).toISOString(),
+      sandbox: { id: registration.sandboxId, name: registration.sandbox },
+      server: server.name,
+      tool,
+    };
+
+    let outcome: Outcome | "allowed";
+    let request: string | undefined;
+    let earlier = false;
+    const always = await store.allowed(server.name);
+    if (server.allow.includes(tool) || always.includes(tool)) {
+      outcome = "allowed";
+    } else {
+      const answer = await approvals.ask(
+        {
+          arguments: params.arguments,
+          sandbox: base.sandbox,
+          server: server.name,
+          tool,
+        },
+        { holdMs: server.holdMs, signal }
+      );
+      ({ earlier, outcome } = answer);
+      request = answer.id;
+    }
+
+    // Recorded before the server sees the call, so nothing reaches it unlogged.
+    const recorded = await record({
+      ...base,
+      earlier,
+      ms: now() - started,
+      outcome,
+      request,
+    });
+    if (!recorded && (outcome === "allowed" || outcome === "approved")) {
+      sendToolError(
+        res,
+        message.id,
+        "Makak Panel could not record this call in its audit log, so it was not made."
+      );
+    } else if (outcome === "allowed" || outcome === "approved") {
+      try {
+        await forward(req, res, server, body, signal);
+      } catch (error) {
+        if (signal.aborted || res.headersSent) {
+          throw error;
+        }
+        log(`MCP server ${server.name} failed: ${(error as Error).message}`);
+        sendToolError(
+          res,
+          message.id,
+          `Makak Panel could not reach the ${server.name} MCP server.`
+        );
+      }
+    } else if (outcome === "denied") {
+      sendToolError(res, message.id, deniedText(tool));
+    } else if (outcome === "held") {
+      sendToolError(res, message.id, heldText(tool, request ?? ""));
+    }
+  };
+
+  const post = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    server: McpServer,
+    registration: Registration,
+    signal: AbortSignal
+  ) => {
+    let message: unknown;
+    try {
+      message = JSON.parse(await readBody(req));
+    } catch (error) {
+      if (error instanceof TooLargeError) {
+        sendError(res, 413, "Request too large");
+      } else {
+        sendError(res, 400, "Not JSON");
+      }
+      return;
+    }
+    // What was checked is what the server gets: the parsed message, not the
+    // bytes, which another parser might read differently.
+    const body = JSON.stringify(message);
+    if (Array.isArray(message)) {
+      if (message.some(isToolCall)) {
+        sendError(res, 400, "Tool calls can't be batched");
+        return;
+      }
+    } else if (isToolCall(message)) {
+      await call(req, res, {
+        body,
+        message: message as Message,
+        registration,
+        server,
+        signal,
+      });
+      return;
+    }
+    await forward(req, res, server, body, signal);
+  };
+
+  const handle = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL
+  ) => {
+    const endpoint = endpointOf(url.pathname);
+    const server = endpoint && byName.get(endpoint.server);
+    if (endpoint === undefined || server === undefined) {
+      sendError(res, 404, "No such MCP server");
+      return;
+    }
+    if (!["DELETE", "GET", "POST"].includes(req.method ?? "")) {
+      res.setHeader("Allow", "GET, POST, DELETE");
+      sendError(res, 405, "Method not allowed");
+      return;
+    }
+    // Ends a held call, or the server's stream, when the caller hangs up.
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        controller.abort();
+      }
+    });
+
+    try {
+      const registration = await identify(req, res, endpoint);
+      if (registration === undefined) {
+        return;
+      }
+      await (req.method === "POST"
+        ? post(req, res, server, registration, controller.signal)
+        : forward(req, res, server, undefined, controller.signal));
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      log(`MCP request to ${server.name} failed: ${(error as Error).message}`);
+      if (res.headersSent) {
+        res.destroy();
+      } else {
+        sendError(res, 502, `The ${server.name} MCP server can't be reached`);
+      }
+    }
+  };
+
+  return {
+    handle: (req, res, url) => {
+      void handle(req, res, url);
+    },
+  };
+};

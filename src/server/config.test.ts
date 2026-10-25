@@ -28,7 +28,10 @@ describe(parseConfig, () => {
       },
     });
     expect(config.ssh).toStrictEqual({ hostSuffix: ".sbx" });
-    expect(config.runs).toStrictEqual({ projects: [] });
+    expect({ mcp: config.mcp, runs: config.runs }).toStrictEqual({
+      mcp: { holdSeconds: 240, servers: [] },
+      runs: { projects: [] },
+    });
     expect({
       envDir: config.envDir,
       handoffsDir: config.handoffsDir,
@@ -94,6 +97,57 @@ describe(parseConfig, () => {
     expect(() =>
       parseConfig({ runs: { projects: [{ commands: [], path: "/p" }] } })
     ).toThrow(/commands/u);
+  });
+
+  it("reads MCP servers, with headers literal or from the environment", () => {
+    const config = parseConfig({
+      mcp: {
+        servers: [
+          {
+            allow: ["get_issue"],
+            headers: {
+              Authorization: { env: "GITLAB_MCP_TOKEN" },
+              "X-Team": "web",
+            },
+            name: "gitlab",
+            url: "https://gitlab.example.com/api/v4/mcp",
+          },
+        ],
+      },
+    });
+    expect(config.mcp.servers).toStrictEqual([
+      {
+        allow: ["get_issue"],
+        headers: {
+          Authorization: { env: "GITLAB_MCP_TOKEN" },
+          "X-Team": "web",
+        },
+        name: "gitlab",
+        url: "https://gitlab.example.com/api/v4/mcp",
+      },
+    ]);
+  });
+
+  it.each([
+    ["a hyphen", "git-lab"],
+    ["upper case", "GitLab"],
+    ["a leading digit", "1gitlab"],
+  ])("rejects an MCP server name with %s", (_, name) => {
+    expect(() =>
+      parseConfig({ mcp: { servers: [{ name, url: "https://x.test/mcp" }] } })
+    ).toThrow(/lower-case letters/u);
+  });
+
+  it("rejects an MCP server listed twice, or not at an HTTP(S) URL", () => {
+    const server = { name: "gitlab", url: "https://x.test/mcp" };
+    expect(() => parseConfig({ mcp: { servers: [server, server] } })).toThrow(
+      /listed twice/u
+    );
+    expect(() =>
+      parseConfig({
+        mcp: { servers: [{ ...server, url: "file:///etc/passwd" }] },
+      })
+    ).toThrow(ConfigError);
   });
 
   it("rejects relative paths", () => {

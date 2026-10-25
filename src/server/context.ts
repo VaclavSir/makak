@@ -1,5 +1,9 @@
 import type { Config } from "./config.ts";
 import type { Lifecycle } from "./lifecycle.ts";
+import type { Approvals } from "./mcp/approvals.ts";
+import type { Audit } from "./mcp/audit.ts";
+import type { McpServer } from "./mcp/proxy.ts";
+import type { McpStore } from "./mcp/store.ts";
 import type { SandboxGit } from "./sandbox-git.ts";
 import type { SandboxRuns } from "./sandbox-runs.ts";
 import type { Sandboxes } from "./sandboxes.ts";
@@ -10,6 +14,13 @@ import type { Tools } from "./tools/index.ts";
 export interface PanelContext {
   config: Config;
   lifecycle: Lifecycle;
+  mcp: {
+    approvals: Approvals;
+    audit: Audit;
+    /** With their upstream headers: never send these to the browser. */
+    servers: McpServer[];
+    store: McpStore;
+  };
   sandboxGit: SandboxGit;
   sandboxRuns: SandboxRuns;
   sandboxes: Sandboxes;

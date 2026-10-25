@@ -111,4 +111,20 @@ describe(checkRequest, () => {
       checkRequest(request({ origin: ORIGIN, upgrade: true }), expected).ok
     ).toBeTruthy();
   });
+
+  it("lets a bearer request without an Origin through, but no browser's from another site", () => {
+    const bearer = (origin?: string) =>
+      checkRequest(request({ bearer: true, method: "POST", origin }), expected)
+        .ok;
+    expect(bearer()).toBeTruthy();
+    expect(bearer(ORIGIN)).toBeTruthy();
+    expect(bearer("https://evil.test")).toBeFalsy();
+    expect(bearer("null")).toBeFalsy();
+    expect(
+      checkRequest(
+        request({ bearer: true, host: "evil.test", method: "POST" }),
+        expected
+      ).ok
+    ).toBeFalsy();
+  });
 });

@@ -37,6 +37,18 @@ const hostPath = z
 
 const port = z.number().int().min(1).max(65_535);
 
+// No hyphens: registrations are named `<server>-<sandbox>`, and sandbox names
+// may have them, so a hyphen in a server name would make the split ambiguous.
+const MCP_SERVER_NAME = /^[a-z][a-z0-9_]*$/u;
+
+const holdSeconds = z.number().int().min(1).max(86_400);
+
+/** A header for the upstream server: literal, or read from the Panel's environment. */
+const headerValue = z.union([
+  z.string(),
+  z.strictObject({ env: z.string().min(1) }),
+]);
+
 const isRegExp = (source: string) => {
   try {
     sandboxPattern(source);
@@ -50,6 +62,27 @@ const configSchema = z
   .strictObject({
     envDir: hostPath.prefault("~/makak/envs"),
     handoffsDir: hostPath.prefault("~/makak/handoffs"),
+    mcp: z
+      .strictObject({
+        holdSeconds: holdSeconds.default(240),
+        servers: z
+          .array(
+            z.strictObject({
+              allow: z.array(z.string().min(1)).default([]),
+              headers: z.record(z.string().min(1), headerValue).default({}),
+              holdSeconds: holdSeconds.optional(),
+              name: z
+                .string()
+                .regex(
+                  MCP_SERVER_NAME,
+                  "must be lower-case letters, digits and underscores, starting with a letter"
+                ),
+              url: z.url({ protocol: /^https?$/u }),
+            })
+          )
+          .default([]),
+      })
+      .prefault({}),
     panel: z
       .strictObject({
         hostname: z
@@ -167,6 +200,17 @@ const configSchema = z
           code: "custom",
           message: `port ${rule.port} is not in any listener's upstream list, so the rule never applies; it must name the sandbox port, such as 8000, not the port in the address`,
           path: ["proxy", "elevate", index, "port"],
+        });
+      }
+    }
+
+    const names = config.mcp.servers.map(({ name }) => name);
+    for (const [index, name] of names.entries()) {
+      if (names.indexOf(name) !== index) {
+        ctx.addIssue({
+          code: "custom",
+          message: `the MCP server ${name} is listed twice`,
+          path: ["mcp", "servers", index, "name"],
         });
       }
     }

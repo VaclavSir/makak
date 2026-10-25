@@ -2,13 +2,14 @@
 
 ## One process
 
-`makak start` runs a single Node process. It owns the Panel's HTTPS server and the reverse proxy listeners, and will own the MCP proxy. The web app inside it is SvelteKit.
+`makak start` runs a single Node process. It owns the Panel's HTTPS server, the reverse proxy listeners and the MCP approval proxy. The web app inside it is SvelteKit.
 
 | Directory | What lives there |
 | --- | --- |
 | `src/cli/` | The `makak` command. Loads config, starts the server, opens the browser. |
 | `src/server/` | Host-side code: config, request checks, auth, the HTTPS server, the sandbox list and the Panel's own state. Plain Node and TypeScript, no Vite. |
 | `src/server/proxy/` | The reverse proxy. |
+| `src/server/mcp/` | The MCP approval proxy, its queue, audit log and tokens. |
 | `src/server/tools/` | The only code that spawns processes: `sbx`, `git`, the browser. |
 | `src/routes/`, `src/lib/` | The SvelteKit app. Pure helpers in `src/lib/` that the server needs too, such as how the proxy maps addresses, are imported from there. |
 
@@ -37,6 +38,7 @@ flowchart LR
 - **Host.** Must be exactly the configured hostname and port. This defeats DNS rebinding, where a foreign page makes its own hostname resolve to `127.0.0.1`.
 - **Origin.** Required, and must be exactly the Panel's origin, for every method except `GET` and `HEAD`, and for every WebSocket handshake. This defeats CSRF. It follows that **`GET` and `HEAD` must never change state.**
 - **Session.** Everything except the login link needs a valid session cookie.
+- **Except the MCP endpoints.** Paths under `/mcp/` take a bearer token instead of the cookie, and never read the cookie; see [MCP proxy](#mcp-proxy). The sbx gateway calls them, and it is no browser: it sends no `Origin`. A browser always does, so a request with any `Origin` but the Panel's is refused there too. No page of the Panel may live under `/mcp/`, since its data requests would go to the proxy.
 
 The checks are pure functions in `src/server/security.ts`; the wiring is in `src/server/panel.ts`.
 
@@ -136,6 +138,33 @@ Commands run in a sandbox without a terminal, from the Panel: the buttons config
 - **Tabs.** The sandbox page has a tab for its overview, which is never closed, and one per run being followed, at `/sandboxes/<name>/runs/<id>`. Starting a run opens its tab. A running run always has one, also when it was started elsewhere; a finished one keeps it until it is closed. Running a command again from its tab starts a new run and moves the tab to it. Every run is listed under _History_. Which tabs are open is remembered in the browser only, per sandbox id, and run ids sort by start time, so a run too new to be listed yet isn't taken for a removed one (`src/lib/run-tabs.ts`).
 - **Getting runs.** The sandbox page gets its runs after the rest of the page, streamed, so asking the sandbox never holds it up. The browser then asks again every three seconds while a run runs, and every fifteen otherwise. The forms on a run's tab post to the overview's actions and stay on the tab.
 - **Where it runs.** In the sandbox, at the workspace's path, which clone mode keeps the same as on the host. Only a running sandbox can be asked; its runs are kept in it while it is stopped.
+
+## MCP proxy
+
+Agents reach MCP servers, such as GitLab's, through the sbx MCP gateway, which runs on the host, outside network policy. The Panel sits between the gateway and each server, and is the only gate on that channel: tools on the allowlist go through, anything else waits for you.
+
+```mermaid
+flowchart LR
+    agent(["Agent"]) --> gw["sbx MCP gateway"]
+    gw -->|"Bearer token"| ep["/mcp/&lt;server&gt;/&lt;sandbox&gt;"]
+    ep --> who{"Token → sandbox"}
+    who -->|unknown, other endpoint,<br/>removed sandbox| refuse["401 / 403"]
+    who --> kind{"tools/call?"}
+    kind -->|no| pass["Server"]
+    kind -->|yes| list{"Allowed?"}
+    list -->|yes| pass
+    list -->|no| queue["Queue: wait for you"]
+    queue -->|approved| pass
+    queue -->|denied| deny["Tool error: denied"]
+    queue -->|not in time| retry["Tool error: call again"]
+```
+
+- **Endpoints.** One per server and sandbox, `/mcp/<server>/<sandbox>` on the Panel's own address. The gateway passes no sandbox identity, so each sandbox gets its own registration with its own token, and the token says who is calling. The path must agree with it; a token used on another sandbox's or another server's endpoint is refused and logged. Never trust a sandbox name the agent supplies in a call.
+- **Tokens** are 32 random bytes, kept in `<stateDir>/mcp.json` only as SHA-256 hashes, one per server and sandbox. A token names the sandbox's id as well as its name, and is refused once the name belongs to another sandbox, or to none. When `sbx` can't say, the call is refused too.
+- **Pass-through.** Everything but tool calls goes to the server unchanged: initialization, tool lists, pings, the server's event stream. The Panel adds the server's configured headers, which hold its credentials; the gateway's `Authorization` is never passed on, nor is the server's `WWW-Authenticate` passed back. Redirects are passed back, never followed. The body the server gets is the JSON the Panel parsed and checked, not the bytes it received, so a parser that reads duplicate keys differently can't smuggle a call past it. Tool calls in a batch are refused.
+- **Holds.** A call off the allowlist waits in the queue for the server's hold time. Allowing or denying it in time answers it. If nobody decides in time, or the caller hangs up, the agent gets a tool error naming the request and asking it to make the same call again, and the request stays in the queue. A call with the same sandbox, tool and arguments joins it, and waits again. A decision made while nothing waits applies to the next such call, once, within a day. The queue is in memory: restarting the Panel empties it.
+- **Why calls are handed back.** The gateway asks the server for no progress notifications, so the Panel can't keep a held call alive, and Claude Code drops a call that is silent for five minutes unless `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT=0` is set in the sandbox; see [holds](configuration.md#holds). The gateway itself waits as long as needed.
+- **Audit.** Every tool call, and what was decided, is appended to `<stateDir>/mcp-audit.jsonl` before the server sees it. A call that can't be recorded isn't made.
 
 ## Tool adapters
 

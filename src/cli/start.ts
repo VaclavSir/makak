@@ -11,6 +11,11 @@ import { loadConfig } from "../server/config.ts";
 import type { Config } from "../server/config.ts";
 import { setPanelContext } from "../server/context.ts";
 import { createLifecycle } from "../server/lifecycle.ts";
+import { createApprovals } from "../server/mcp/approvals.ts";
+import { createAudit } from "../server/mcp/audit.ts";
+import { createMcpProxy } from "../server/mcp/proxy.ts";
+import { resolveServers } from "../server/mcp/servers.ts";
+import { createMcpStore } from "../server/mcp/store.ts";
 import { createPanelServer, panelOrigin } from "../server/panel.ts";
 import type { PanelApp } from "../server/panel.ts";
 import { createProxyServer } from "../server/proxy/proxy.ts";
@@ -202,6 +207,12 @@ export const start = async (options: StartOptions): Promise<void> => {
   const sandboxes = createSandboxes(tools.sbx);
   const store = createSandboxStore(config.stateDir);
   const sandboxGit = createSandboxGit(tools.git);
+  const mcp = {
+    approvals: createApprovals(),
+    audit: createAudit(config.stateDir),
+    servers: resolveServers(config.mcp),
+    store: createMcpStore(config.stateDir),
+  };
 
   setPanelContext({
     config,
@@ -212,6 +223,7 @@ export const start = async (options: StartOptions): Promise<void> => {
       sbx: tools.sbx,
       store,
     }),
+    mcp,
     sandboxGit,
     sandboxRuns: createSandboxRuns({
       projects: config.runs.projects,
@@ -231,6 +243,14 @@ export const start = async (options: StartOptions): Promise<void> => {
     auth,
     hostname,
     log,
+    mcp: createMcpProxy({
+      ...mcp,
+      findSandbox: async (name) => {
+        const list = await sandboxes.recent();
+        return list.find((sandbox) => sandbox.name === name);
+      },
+      log,
+    }),
     port,
     tls,
   });

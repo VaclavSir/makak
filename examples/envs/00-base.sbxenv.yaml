@@ -26,3 +26,6 @@ workspace:
 
 env:
   MAKAK_SANDBOX: ${{ env.args.sandbox }}
+  # Lets an MCP call wait for approval in the Panel for as long as the server's
+  # hold, instead of giving up after five silent minutes. See docs/configuration.md.
+  CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "0"
