@@ -47,6 +47,9 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 // What passes between the gateway and the server. Not the gateway's
 // Authorization: that is the sandbox's token, for the Panel only.
+/** How much of a server's error answer is logged. */
+const MAX_LOGGED_BODY = 500;
+
 const REQUEST_HEADERS = [
   "accept",
   "content-type",
@@ -180,6 +183,9 @@ export const createMcpProxy = ({
     const registration =
       token === undefined ? undefined : await store.identify(token);
     if (registration === undefined) {
+      log(
+        `Refused MCP request to ${endpoint.server}/${endpoint.sandbox}: ${token === undefined ? "no" : "unknown"} token`
+      );
       res.setHeader("WWW-Authenticate", "Bearer");
       sendError(res, 401, "Missing or unknown token");
       return;
@@ -264,6 +270,17 @@ export const createMcpProxy = ({
       if (value !== null) {
         passed[name] = value;
       }
+    }
+    if (!response.ok) {
+      // Small, and the only clue to why the server refused: logged, then
+      // passed back as it came.
+      const text = await response.text();
+      log(
+        `${server.name} answered a ${req.method} with HTTP ${response.status}: ${text.slice(0, MAX_LOGGED_BODY).trim() || "(no body)"}`
+      );
+      res.writeHead(response.status, passed);
+      res.end(text);
+      return;
     }
     res.writeHead(response.status, passed);
     if (response.body === null) {

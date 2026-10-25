@@ -49,6 +49,11 @@ const upstream = () => {
       res.end();
       return;
     }
+    if ((body as { method?: unknown } | undefined)?.method === "forbidden") {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end('{"error":"insufficient_scope"}');
+      return;
+    }
     const id = (body as { id?: unknown } | undefined)?.id ?? null;
     res.writeHead(200, {
       "Content-Type": "application/json",
@@ -207,6 +212,10 @@ describe(createMcpProxy, () => {
         statusOf(toolCall("get_issue"), { token: "forged" })
       ).resolves.toBe(401);
       expect(received).toStrictEqual([]);
+      expect(logged).toStrictEqual([
+        "Refused MCP request to gitlab/feature-a: no token",
+        "Refused MCP request to gitlab/feature-a: unknown token",
+      ]);
     });
 
     it("refuses a token on another sandbox's or another server's endpoint", async () => {
@@ -335,6 +344,22 @@ describe(createMcpProxy, () => {
       });
       expect(received).toStrictEqual([]);
       expect(logged.join("\n")).toContain("disk full");
+    });
+
+    it("logs why the server refused a request, and passes the refusal back", async () => {
+      const response = await post({
+        id: 1,
+        jsonrpc: "2.0",
+        method: "forbidden",
+      });
+
+      expect(response.status).toBe(403);
+      await expect(response.text()).resolves.toBe(
+        '{"error":"insufficient_scope"}'
+      );
+      expect(logged).toStrictEqual([
+        'gitlab answered a POST with HTTP 403: {"error":"insufficient_scope"}',
+      ]);
     });
 
     it("passes a tool always allowed", async () => {
