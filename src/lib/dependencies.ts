@@ -6,3 +6,6 @@ export const SANDBOX_PAGE = "makak:sandbox-page";
 
 /** Invalidating this reloads a run's tab, and nothing else. */
 export const RUN_PAGE = "makak:run-page";
+
+/** Invalidating this reloads the MCP approval queue and audit log. */
+export const MCP = "makak:mcp";

@@ -5,13 +5,20 @@ import type { LayoutServerLoad } from "./$types";
 
 export const load: LayoutServerLoad = async ({ depends }) => {
   depends(SANDBOXES);
+  const { mcp, sandboxes } = getPanelContext();
+  const pendingApprovals = mcp.approvals.pending().length;
   try {
     return {
-      sandboxes: await getPanelContext().sandboxes.list(),
+      pendingApprovals,
+      sandboxes: await sandboxes.list(),
       sbxError: undefined,
     };
   } catch (error) {
     // The Panel stays usable without sbx; the sidebar says what's wrong.
-    return { sandboxes: undefined, sbxError: (error as Error).message };
+    return {
+      pendingApprovals,
+      sandboxes: undefined,
+      sbxError: (error as Error).message,
+    };
   }
 };

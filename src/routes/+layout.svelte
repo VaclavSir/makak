@@ -1,13 +1,13 @@
 <script lang="ts">
   import "../app.css";
 
-  import { invalidate } from "$app/navigation";
+  import { afterNavigate, invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { onMount } from "svelte";
   import favicon from "#lib/assets/favicon.svg";
   import StatusDot from "#lib/components/status-dot.svelte";
-  import { SANDBOXES } from "#lib/dependencies.ts";
+  import { MCP, SANDBOXES } from "#lib/dependencies.ts";
   import {
     DEFAULT_ORDER,
     parseOrder,
@@ -50,8 +50,20 @@
   const refresh = () => {
     if (document.visibilityState === "visible") {
       invalidate(SANDBOXES);
+      invalidate(MCP);
     }
   };
+
+  // The tab's title counts the calls waiting for approval, so it shows
+  // among the browser's tabs, whichever page is open.
+  const PENDING_PREFIX = /^\(\d+\) /u;
+  const showPending = () => {
+    const title = document.title.replace(PENDING_PREFIX, "");
+    const count = data.pendingApprovals;
+    document.title = count > 0 ? `(${count}) ${title}` : title;
+  };
+  $effect(showPending);
+  afterNavigate(showPending);
 
   // Polls while the tab is visible, and catches up as soon as it is shown.
   $effect(() => {
@@ -91,6 +103,18 @@
       aria-current={page.route.id === "/new" ? "page" : undefined}
       >+ New sandbox</a
     >
+    <a
+      class="new"
+      href={resolve("/approvals")}
+      aria-current={page.route.id === "/approvals" ? "page" : undefined}
+    >
+      MCP approvals
+      {#if data.pendingApprovals > 0}
+        <span class="badge" aria-label={`${data.pendingApprovals} waiting`}
+          >{data.pendingApprovals}</span
+        >
+      {/if}
+    </a>
     {#if sorted === undefined}
       <p class="error">{data.sbxError}</p>
     {:else if sorted.length === 0}
@@ -183,6 +207,16 @@
   .new:hover,
   .new[aria-current="page"] {
     background: var(--selected);
+  }
+
+  .badge {
+    margin-left: 0.25rem;
+    border-radius: 999px;
+    background: var(--accent);
+    padding: 0 0.45rem;
+    color: var(--surface);
+    font-size: 0.8rem;
+    font-weight: 600;
   }
 
   ul {
