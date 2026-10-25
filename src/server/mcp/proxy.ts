@@ -4,6 +4,7 @@ import type { ReadableStream } from "node:stream/web";
 
 import type { Approvals, Outcome } from "./approvals.ts";
 import type { Audit, AuditEntry } from "./audit.ts";
+import type { OAuth } from "./oauth.ts";
 import type { McpStore, Registration } from "./store.ts";
 
 // The MCP approval proxy: one endpoint per (server, sandbox), at
@@ -20,6 +21,8 @@ export interface McpServer {
   headers: Record<string, string>;
   holdMs: number;
   name: string;
+  /** Signs in with OAuth: the Panel's token goes with every call. */
+  oauth?: { scopes: readonly string[] };
   url: string;
 }
 
@@ -29,6 +32,7 @@ export interface McpProxyOptions {
   /** The sandbox now called this, to tell a removed one's token apart. */
   findSandbox: (name: string) => Promise<{ id: string } | undefined>;
   log: (message: string) => void;
+  oauth?: Pick<OAuth, "accessToken" | "refresh" | "signOut">;
   servers: readonly McpServer[];
   store: Pick<McpStore, "allowed" | "identify">;
   fetch?: typeof fetch;
@@ -93,17 +97,22 @@ const sendToolError = (res: ServerResponse, id: unknown, text: string) => {
   });
 };
 
-class TooLargeError extends Error {
-  override name = "TooLargeError";
+/** The server needs a sign-in the Panel doesn't have. */
+class SignedOutError extends Error {
+  override name = "SignedOutError";
 }
 
-const readBody = async (req: IncomingMessage) => {
+const signedOutText = (server: string) =>
+  `Makak Panel is not signed in to the ${server} MCP server. Ask the user to sign in on the Panel's MCP approvals page, then try again.`;
+
+/** The body, or undefined when it is too large. */
+const readBody = async (req: IncomingMessage): Promise<string | undefined> => {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
     if (size > MAX_BODY_BYTES) {
-      throw new TooLargeError();
+      return;
     }
     chunks.push(chunk as Buffer);
   }
@@ -144,6 +153,7 @@ export const createMcpProxy = ({
   findSandbox,
   log,
   now = Date.now,
+  oauth,
   servers,
   store,
 }: McpProxyOptions): McpProxy => {
@@ -219,14 +229,35 @@ export const createMcpProxy = ({
     }
     Object.assign(headers, server.headers);
 
-    const response = await fetchUpstream(server.url, {
-      body,
-      headers,
-      method: req.method,
-      // A redirect is passed back, never followed with the server's headers.
-      redirect: "manual",
-      signal,
-    });
+    const send = async (token: string | undefined) => {
+      if (server.oauth !== undefined) {
+        if (token === undefined) {
+          throw new SignedOutError();
+        }
+        headers.authorization = `Bearer ${token}`;
+      }
+      return await fetchUpstream(server.url, {
+        body,
+        headers,
+        method: req.method,
+        // A redirect is passed back, never followed with the server's headers.
+        redirect: "manual",
+        signal,
+      });
+    };
+    const token = await oauth?.accessToken(server.name);
+    let response = await send(token);
+    // A token the server refuses may only need refreshing; once.
+    if (response.status === 401 && server.oauth !== undefined) {
+      await response.body?.cancel();
+      response = await send(await oauth?.refresh(server.name, token));
+      if (response.status === 401) {
+        // Refused even fresh: the sign-in is no good, and the page says so.
+        await response.body?.cancel();
+        await oauth?.signOut(server.name);
+        throw new SignedOutError();
+      }
+    }
     const passed: Record<string, string> = {};
     for (const name of RESPONSE_HEADERS) {
       const value = response.headers.get(name);
@@ -239,6 +270,20 @@ export const createMcpProxy = ({
       res.end();
     } else {
       Readable.fromWeb(response.body as ReadableStream).pipe(res);
+    }
+  };
+
+  /** Why calls to the server can't be made now, if they can't. */
+  const signInProblemOf = async (server: McpServer) => {
+    if (server.oauth === undefined) {
+      return;
+    }
+    try {
+      const token = await oauth?.accessToken(server.name);
+      return token === undefined ? signedOutText(server.name) : undefined;
+    } catch (error) {
+      log(`Signing in to ${server.name} failed: ${(error as Error).message}`);
+      return `Makak Panel could not sign in to the ${server.name} MCP server just now. Try again later.`;
     }
   };
 
@@ -269,6 +314,13 @@ export const createMcpProxy = ({
       server: server.name,
       tool,
     };
+
+    // Not worth asking the user about a call that can't be made.
+    const signInProblem = await signInProblemOf(server);
+    if (signInProblem !== undefined) {
+      sendToolError(res, message.id, signInProblem);
+      return;
+    }
 
     let outcome: Outcome | "allowed";
     let request: string | undefined;
@@ -311,6 +363,10 @@ export const createMcpProxy = ({
         if (signal.aborted || res.headersSent) {
           throw error;
         }
+        if (error instanceof SignedOutError) {
+          sendToolError(res, message.id, signedOutText(server.name));
+          return;
+        }
         log(`MCP server ${server.name} failed: ${(error as Error).message}`);
         sendToolError(
           res,
@@ -332,15 +388,16 @@ export const createMcpProxy = ({
     registration: Registration,
     signal: AbortSignal
   ) => {
+    const text = await readBody(req);
+    if (text === undefined) {
+      sendError(res, 413, "Request too large");
+      return;
+    }
     let message: unknown;
     try {
-      message = JSON.parse(await readBody(req));
-    } catch (error) {
-      if (error instanceof TooLargeError) {
-        sendError(res, 413, "Request too large");
-      } else {
-        sendError(res, 400, "Not JSON");
-      }
+      message = JSON.parse(text);
+    } catch {
+      sendError(res, 400, "Not JSON");
       return;
     }
     // What was checked is what the server gets: the parsed message, not the
@@ -398,6 +455,10 @@ export const createMcpProxy = ({
         : forward(req, res, server, undefined, controller.signal));
     } catch (error) {
       if (controller.signal.aborted) {
+        return;
+      }
+      if (error instanceof SignedOutError && !res.headersSent) {
+        sendError(res, 503, signedOutText(server.name));
         return;
       }
       log(`MCP request to ${server.name} failed: ${(error as Error).message}`);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import type { SubmitFunction } from "$app/forms";
   import { resolve } from "$app/paths";
   import McpArguments from "#lib/components/mcp-arguments.svelte";
   import { formatTime } from "#lib/format.ts";
@@ -11,6 +12,19 @@
   let busy = $state<string | undefined>();
 
   const sandboxPage = (name: string) => resolve("/sandboxes/[name]", { name });
+
+  // Signing in leaves the Panel for the server's own page. Through fetch, like
+  // every form here: a plain form post would carry no Origin, as the Panel
+  // sends no Referer.
+  const leave: SubmitFunction =
+    () =>
+    async ({ result, update }) => {
+      if (result.type === "redirect") {
+        window.location.assign(result.location);
+        return;
+      }
+      await update();
+    };
 </script>
 
 <svelte:head>
@@ -102,6 +116,7 @@
         <th>Server</th>
         <th>Endpoint</th>
         <th>Hold</th>
+        <th>Sign-in</th>
         <th>Allowed without asking</th>
       </tr>
     </thead>
@@ -111,6 +126,33 @@
           <td><strong>{server.name}</strong></td>
           <td><code>{data.origin}/mcp/{server.name}/&lt;sandbox&gt;</code></td>
           <td>{formatHold(server.holdSeconds)}</td>
+          <td class="sign-in">
+            {#if server.signIn === undefined}
+              <span class="hint">By config</span>
+            {:else}
+              {#if server.signIn.signedIn}
+                <span>Signed in</span>
+              {:else}
+                <span class="signed-out">Not signed in</span>
+              {/if}
+              <form method="POST" action="?/signIn" use:enhance={leave}>
+                <input type="hidden" name="server" value={server.name} />
+                <button
+                  type="submit"
+                  class={{ primary: !server.signIn.signedIn }}
+                  >{server.signIn.signedIn
+                    ? "Sign in again"
+                    : "Sign in"}</button
+                >
+              </form>
+              {#if server.signIn.signedIn}
+                <form method="POST" action="?/signOut" use:enhance>
+                  <input type="hidden" name="server" value={server.name} />
+                  <button type="submit">Sign out</button>
+                </form>
+              {/if}
+            {/if}
+          </td>
           <td>
             <ul class="tools">
               {#each server.allow as tool (tool)}
@@ -245,6 +287,24 @@
 
   td code {
     overflow-wrap: anywhere;
+  }
+
+  .sign-in {
+    white-space: nowrap;
+  }
+
+  .sign-in form {
+    display: inline;
+    margin-left: 0.4rem;
+  }
+
+  .sign-in button {
+    padding: 0.1rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  .signed-out {
+    color: var(--warning-text);
   }
 
   .tools {

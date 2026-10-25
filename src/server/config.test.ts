@@ -150,6 +150,24 @@ describe(parseConfig, () => {
     ).toThrow(ConfigError);
   });
 
+  it("reads MCP servers that sign in with OAuth, without an Authorization header", () => {
+    const server = { name: "gitlab", url: "https://gitlab.test/api/v4/mcp" };
+    expect(
+      parseConfig({
+        mcp: { servers: [{ ...server, oauth: { scopes: ["mcp"] } }] },
+      }).mcp.servers[0]?.oauth
+    ).toStrictEqual({ scopes: ["mcp"] });
+    expect(() =>
+      parseConfig({
+        mcp: {
+          servers: [
+            { ...server, headers: { authorization: "Bearer x" }, oauth: {} },
+          ],
+        },
+      })
+    ).toThrow(/sets the Authorization header itself/u);
+  });
+
   it("rejects relative paths", () => {
     expect(() => parseConfig({ envDir: "makak/envs" })).toThrow(/absolute/u);
   });

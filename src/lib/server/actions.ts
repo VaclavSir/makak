@@ -58,3 +58,9 @@ export const attempt = async <T>(
 };
 
 export const INCOMPLETE = { message: "The form is incomplete." };
+
+/** A text field, or undefined when it is missing. */
+export const field = (form: FormData, name: string): string | undefined => {
+  const value = form.get(name);
+  return typeof value === "string" ? value : undefined;
+};

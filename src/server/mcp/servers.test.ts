@@ -36,6 +36,7 @@ describe(resolveServers, () => {
         headers: { Authorization: "Bearer g", "X-Team": "web" },
         holdMs: 60_000,
         name: "gitlab",
+        oauth: undefined,
         url: "https://gitlab.test/mcp",
       },
       {
@@ -43,6 +44,7 @@ describe(resolveServers, () => {
         headers: { Authorization: "Bearer l" },
         holdMs: 14_400_000,
         name: "linear",
+        oauth: undefined,
         url: "https://linear.test/mcp",
       },
     ]);

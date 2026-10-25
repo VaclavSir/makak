@@ -2,6 +2,7 @@ import { fail, redirect } from "@sveltejs/kit";
 
 import {
   attempt,
+  field,
   hashesSchema,
   INCOMPLETE,
   jsonField,
@@ -15,12 +16,6 @@ import type { Actions } from "./$types";
 /** Hashes as the page saw the env files; none when it used no plan. */
 const hashesOf = (form: FormData) =>
   jsonField(hashesSchema, form.get("hashes") ?? "[]");
-
-/** A text field, or undefined when it is missing. */
-const field = (form: FormData, name: string) => {
-  const value = form.get(name);
-  return typeof value === "string" ? value : undefined;
-};
 
 const runPage = (name: string, id: string) =>
   `/sandboxes/${encodeURIComponent(name)}/runs/${encodeURIComponent(id)}`;

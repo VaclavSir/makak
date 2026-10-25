@@ -77,6 +77,11 @@ const configSchema = z
                   MCP_SERVER_NAME,
                   "must be lower-case letters, digits and underscores, starting with a letter"
                 ),
+              oauth: z
+                .strictObject({
+                  scopes: z.array(z.string().min(1)).default([]),
+                })
+                .optional(),
               url: z.url({ protocol: /^https?$/u }),
             })
           )
@@ -205,12 +210,22 @@ const configSchema = z
     }
 
     const names = config.mcp.servers.map(({ name }) => name);
-    for (const [index, name] of names.entries()) {
-      if (names.indexOf(name) !== index) {
+    for (const [index, server] of config.mcp.servers.entries()) {
+      if (names.indexOf(server.name) !== index) {
         ctx.addIssue({
           code: "custom",
-          message: `the MCP server ${name} is listed twice`,
+          message: `the MCP server ${server.name} is listed twice`,
           path: ["mcp", "servers", index, "name"],
+        });
+      }
+      const sendsAuthorization = Object.keys(server.headers).some(
+        (header) => header.toLowerCase() === "authorization"
+      );
+      if (server.oauth !== undefined && sendsAuthorization) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${server.name} signs in with OAuth, which sets the Authorization header itself`,
+          path: ["mcp", "servers", index, "headers"],
         });
       }
     }

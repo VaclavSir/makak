@@ -1,7 +1,12 @@
-import { fail } from "@sveltejs/kit";
+import { fail, redirect } from "@sveltejs/kit";
 
 import { MCP } from "#lib/dependencies.ts";
-import { attempt, INCOMPLETE, orUserError } from "#lib/server/actions.ts";
+import {
+  attempt,
+  field,
+  INCOMPLETE,
+  orUserError,
+} from "#lib/server/actions.ts";
 import { getPanelContext } from "#server/context.ts";
 import { panelOrigin } from "#server/panel.ts";
 
@@ -11,24 +16,23 @@ const AUDIT_LIMIT = 100;
 
 const DECISIONS = ["allow", "always", "deny"] as const;
 
-const field = (form: FormData, name: string) => {
-  const value = form.get(name);
-  return typeof value === "string" ? value : undefined;
-};
-
 export const load: PageServerLoad = async ({ depends }) => {
   depends(MCP);
   const { config, mcp } = getPanelContext();
-  const { approvals, audit, servers, store } = mcp;
+  const { approvals, audit, oauth, servers, store } = mcp;
   // Never the servers' headers: they hold the credentials.
   const described = await orUserError(
     async () =>
       await Promise.all(
-        servers.map(async ({ allow, holdMs, name }) => ({
-          allow,
-          always: await store.allowed(name),
-          holdSeconds: holdMs / 1000,
-          name,
+        servers.map(async (server) => ({
+          allow: server.allow,
+          always: await store.allowed(server.name),
+          holdSeconds: server.holdMs / 1000,
+          name: server.name,
+          signIn:
+            server.oauth === undefined
+              ? undefined
+              : await oauth.status(server.name),
         }))
       )
   );
@@ -84,5 +88,32 @@ export const actions: Actions = {
       getPanelContext().mcp.store.disallow(server, tool)
     );
     return result.ok ? { disallowed: tool } : result.failure;
+  },
+
+  /** Sends the browser to the server's sign-in, which comes back to /oauth/callback. */
+  signIn: async ({ request }) => {
+    const server = field(await request.formData(), "server");
+    if (server === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().mcp.oauth.begin(server)
+    );
+    if (!result.ok) {
+      return result.failure;
+    }
+    // To the server's own page, which the Panel found in its metadata.
+    redirect(303, result.value, { external: true });
+  },
+
+  signOut: async ({ request }) => {
+    const server = field(await request.formData(), "server");
+    if (server === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().mcp.oauth.signOut(server)
+    );
+    return result.ok ? { signedOut: server } : result.failure;
   },
 };

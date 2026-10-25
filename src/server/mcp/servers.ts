@@ -27,6 +27,7 @@ export const resolveServers = (
     ),
     holdMs: (server.holdSeconds ?? mcp.holdSeconds) * 1000,
     name: server.name,
+    oauth: server.oauth,
     url: server.url,
   }));
   if (missing.length > 0) {

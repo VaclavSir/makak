@@ -46,8 +46,13 @@ A full example, with the defaults where there are any:
       {
         "name": "gitlab",
         "url": "https://gitlab.example.com/api/v4/mcp",
-        "headers": { "Authorization": { "env": "GITLAB_MCP_AUTHORIZATION" } },
+        "oauth": { "scopes": ["mcp"] },
         "allow": ["get_issue", "get_merge_request", "list_merge_requests"]
+      },
+      {
+        "name": "tracker",
+        "url": "https://tracker.example.com/mcp",
+        "headers": { "Authorization": { "env": "TRACKER_MCP_AUTHORIZATION" } }
       }
     ]
   },
@@ -87,7 +92,8 @@ A full example, with the defaults where there are any:
 | `mcp.servers` | `[]` | MCP servers sandboxes reach through the Panel's [approval proxy](architecture.md#mcp-proxy). |
 | `mcp.servers[].name` |  | Lower-case letters, digits and underscores. Each sandbox's endpoint is `/mcp/<name>/<sandbox>`. |
 | `mcp.servers[].url` |  | The server's Streamable HTTP endpoint. |
-| `mcp.servers[].headers` | `{}` | Headers the Panel sends to the server, such as its credentials. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Give it a read-only token where the server allows it. |
+| `mcp.servers[].oauth` |  | The Panel signs in to the server with OAuth, once, from the MCP approvals page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
+| `mcp.servers[].headers` | `{}` | Headers the Panel sends to the server, such as a token for servers that don't sign in with OAuth. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Not `Authorization` with `oauth`. |
 | `mcp.servers[].allow` | `[]` | Tools that run without asking. _Always allow_ in the Panel adds to this list without editing the file. |
 | `mcp.servers[].holdSeconds` | `mcp.holdSeconds` | The hold for this server. |
 | `envDir` | `~/makak/envs` | The env directory: the `*.sbxenv.yaml` files to create sandboxes from; see [env files](env-files.md). |
@@ -127,6 +133,7 @@ Elevate the livereload port too. An `https://` page can't open a `ws://` connect
 - **The Panel is on its own domain.** `panel.hostname` must not be under any sandbox suffix, nor share its last two labels with one. A sandbox must never be able to share a site with the Panel. The two-label rule is a simple stand-in for the public suffix list, enough for `.test` and ordinary company domains.
 - **The Panel hostname is a real name.** At least two labels, lower case, and not an IP address or `localhost`.
 - **No suffix is listed twice**, and no MCP server name.
+- **An MCP server that signs in with OAuth sets no `Authorization` header of its own.**
 - **Elevate rules are valid regular expressions**, and their ports are in some listener's `upstream` list.
 - **Ports don't collide.** No two listeners, and no listener and the Panel, share a port.
 - **There are no unknown keys**, so a typo fails instead of being ignored.

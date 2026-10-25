@@ -44,6 +44,11 @@ const upstream = () => {
     }
     const body: unknown = text === "" ? undefined : JSON.parse(text);
     received.push({ body, headers: req.headers, method: req.method });
+    if (req.headers.authorization === "Bearer stale") {
+      res.writeHead(401, { "WWW-Authenticate": "Bearer" });
+      res.end();
+      return;
+    }
     const id = (body as { id?: unknown } | undefined)?.id ?? null;
     res.writeHead(200, {
       "Content-Type": "application/json",
@@ -130,6 +135,14 @@ describe(createMcpProxy, () => {
     const response = await post(...args);
     return response.status;
   };
+
+  /** A call from feature-a to the proxy at `url`. */
+  const callAt = async (url: string, call: unknown) =>
+    await fetch(`${url}/mcp/gitlab/feature-a`, {
+      body: JSON.stringify(call),
+      headers: { Authorization: `Bearer ${tokenA}` },
+      method: "POST",
+    });
 
   /** Waits for the proxy to queue a call. */
   const nextPending = async () => {
@@ -345,6 +358,131 @@ describe(createMcpProxy, () => {
       await expect(audit.recent(1)).resolves.toMatchObject([
         { outcome: "allowed" },
       ]);
+    });
+  });
+
+  describe("servers that sign in with OAuth", () => {
+    const servers: Server[] = [];
+    let signedOut: string[];
+
+    beforeEach(() => {
+      signedOut = [];
+    });
+
+    afterEach(() => {
+      for (const server of servers.splice(0)) {
+        server.closeAllConnections();
+        server.close();
+      }
+    });
+
+    /** A proxy for one OAuth server, with the given tokens to hand out. */
+    const oauthProxy = async (tokens: {
+      current: string | undefined;
+      refreshed: string | undefined;
+      failing?: boolean;
+    }) => {
+      const url = up.address();
+      const proxy = createMcpProxy({
+        approvals,
+        audit,
+        findSandbox: () => Promise.resolve({ id: A.id }),
+        log: (message) => logged.push(message),
+        oauth: {
+          accessToken: () =>
+            tokens.failing
+              ? Promise.reject(new Error("token endpoint down"))
+              : Promise.resolve(tokens.current),
+          refresh: () => {
+            tokens.current = tokens.refreshed;
+            return Promise.resolve(tokens.refreshed);
+          },
+          signOut: (name) => {
+            signedOut.push(name);
+            return Promise.resolve();
+          },
+        },
+        servers: [
+          {
+            allow: ["get_issue"],
+            headers: {},
+            holdMs: 200,
+            name: "gitlab",
+            oauth: { scopes: [] },
+            url: `http://127.0.0.1:${(url as AddressInfo).port}/api/mcp`,
+          },
+        ],
+        store,
+      });
+      const server = createServer((req, res) => {
+        proxy.handle(req, res, new URL(req.url ?? "/", "http://panel.test"));
+      });
+      servers.push(server);
+      return await listen(server);
+    };
+
+    it("sends the Panel's token", async () => {
+      const url = await oauthProxy({ current: "at-1", refreshed: undefined });
+      await callAt(url, toolCall("get_issue"));
+      expect(received[0]?.headers.authorization).toBe("Bearer at-1");
+    });
+
+    it("refreshes a token the server refuses, and tries once more", async () => {
+      const url = await oauthProxy({ current: "stale", refreshed: "at-2" });
+      const response = await callAt(url, toolCall("get_issue"));
+      await expect(resultText(response)).resolves.toMatchObject({
+        isError: false,
+      });
+      expect(
+        received.map(({ headers }) => headers.authorization)
+      ).toStrictEqual(["Bearer stale", "Bearer at-2"]);
+    });
+
+    it("tells the agent to have the user sign in, without asking the user about the call", async () => {
+      const url = await oauthProxy({
+        current: undefined,
+        refreshed: undefined,
+      });
+      const response = await callAt(url, toolCall("create_note"));
+      const { isError, text } = await resultText(response);
+      expect(isError).toBeTruthy();
+      expect(text).toContain("not signed in to the gitlab MCP server");
+      expect(approvals.pending()).toStrictEqual([]);
+      expect(received).toStrictEqual([]);
+    });
+
+    it("signs out when even a fresh token is refused", async () => {
+      const url = await oauthProxy({ current: "stale", refreshed: "stale" });
+      const { text } = await resultText(
+        await callAt(url, toolCall("get_issue"))
+      );
+      expect(text).toContain("not signed in to the gitlab MCP server");
+      expect(signedOut).toStrictEqual(["gitlab"]);
+    });
+
+    it("answers with a tool error when signing in fails for now", async () => {
+      const url = await oauthProxy({
+        current: "at-1",
+        failing: true,
+        refreshed: undefined,
+      });
+      const response = await callAt(url, toolCall("create_note"));
+      expect(response.status).toBe(200);
+      await expect(resultText(response)).resolves.toMatchObject({
+        isError: true,
+        text: expect.stringContaining("could not sign in"),
+      });
+      expect(approvals.pending()).toStrictEqual([]);
+    });
+
+    it("answers other requests with an error while signed out", async () => {
+      const url = await oauthProxy({ current: "stale", refreshed: undefined });
+      const response = await callAt(url, {
+        id: 0,
+        jsonrpc: "2.0",
+        method: "tools/list",
+      });
+      expect(response.status).toBe(503);
     });
   });
 

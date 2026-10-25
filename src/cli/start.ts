@@ -13,6 +13,7 @@ import { setPanelContext } from "../server/context.ts";
 import { createLifecycle } from "../server/lifecycle.ts";
 import { createApprovals } from "../server/mcp/approvals.ts";
 import { createAudit } from "../server/mcp/audit.ts";
+import { createOAuth, OAUTH_CALLBACK_PATH } from "../server/mcp/oauth.ts";
 import { createMcpProxy } from "../server/mcp/proxy.ts";
 import { resolveServers } from "../server/mcp/servers.ts";
 import { createMcpStore } from "../server/mcp/store.ts";
@@ -207,10 +208,18 @@ export const start = async (options: StartOptions): Promise<void> => {
   const sandboxes = createSandboxes(tools.sbx);
   const store = createSandboxStore(config.stateDir);
   const sandboxGit = createSandboxGit(tools.git);
+  const servers = resolveServers(config.mcp);
   const mcp = {
     approvals: createApprovals(),
     audit: createAudit(config.stateDir),
-    servers: resolveServers(config.mcp),
+    oauth: createOAuth({
+      redirectUri: `${origin}${OAUTH_CALLBACK_PATH}`,
+      servers: servers.flatMap(({ name, oauth, url }) =>
+        oauth === undefined ? [] : [{ name, scopes: oauth.scopes, url }]
+      ),
+      stateDir: config.stateDir,
+    }),
+    servers,
     store: createMcpStore(config.stateDir),
   };
 
