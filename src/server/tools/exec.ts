@@ -11,6 +11,8 @@ export interface ExecOptions {
   cwd?: string;
   /** Added to the Panel's environment. */
   env?: Record<string, string>;
+  /** Written to the command's stdin, such as a secret kept out of its args. */
+  input?: string;
   timeoutMs?: number;
 }
 
@@ -43,10 +45,10 @@ interface ExecFileError extends Error {
 export const exec: Exec = async (
   command,
   args,
-  { cwd, env, timeoutMs } = {}
+  { cwd, env, input, timeoutMs } = {}
 ) => {
   try {
-    const { stderr, stdout } = await execFileAsync(command, args, {
+    const running = execFileAsync(command, args, {
       cwd,
       encoding: "utf-8",
       env: env === undefined ? undefined : { ...process.env, ...env },
@@ -54,6 +56,9 @@ export const exec: Exec = async (
       shell: false,
       timeout: timeoutMs,
     });
+    // Closed either way, so a command reading stdin never waits for more.
+    running.child.stdin?.end(input);
+    const { stderr, stdout } = await running;
     return { exitCode: 0, stderr, stdout };
   } catch (error) {
     const {

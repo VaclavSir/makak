@@ -76,23 +76,61 @@ const listSchema = z.array(
     }))
 );
 
-export const parseSandboxList = (stdout: string): Sandbox[] => {
+/** sbx's JSON output, checked against what the Panel needs of it. */
+const parseJson = <S extends z.ZodType>(
+  command: string,
+  schema: S,
+  stdout: string
+): z.output<S> => {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
   } catch (error) {
-    throw new CommandError("`sbx ls --json` did not print valid JSON", {
+    throw new CommandError(`\`${command}\` did not print valid JSON`, {
       cause: error,
     });
   }
-  const result = listSchema.safeParse(json);
+  const result = schema.safeParse(json);
   if (!result.success) {
     throw new CommandError(
-      `Unexpected \`sbx ls --json\` output:\n${z.prettifyError(result.error)}`
+      `Unexpected \`${command}\` output:\n${z.prettifyError(result.error)}`
     );
   }
   return result.data;
 };
+
+export const parseSandboxList = (stdout: string): Sandbox[] =>
+  parseJson("sbx ls --json", listSchema, stdout);
+
+/** A registered MCP server as `sbx mcp ls --json` reports it. */
+export interface McpListing {
+  /** What sbx says about it, e.g. `custom headers` or `1 header secret not set`. */
+  detail: string | undefined;
+  name: string;
+  /** The command sbx suggests to make it usable, if any. */
+  nextStep: string | undefined;
+  /** As reported, e.g. `ready` or `needs-secret`. Not an enum: sbx may add more. */
+  status: string;
+}
+
+const mcpListSchema = z.array(
+  z
+    .object({
+      detail: z.string().optional(),
+      name: z.string().min(1),
+      next_step: z.string().optional(),
+      status: z.string().min(1),
+    })
+    .transform((entry): McpListing => ({
+      detail: entry.detail,
+      name: entry.name,
+      nextStep: entry.next_step,
+      status: entry.status,
+    }))
+);
+
+export const parseMcpList = (stdout: string): McpListing[] =>
+  parseJson("sbx mcp ls --json", mcpListSchema, stdout);
 
 export const FAKE_SANDBOXES: readonly Sandbox[] = [
   {

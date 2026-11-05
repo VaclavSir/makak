@@ -9,6 +9,25 @@
   let { data, form }: PageProps = $props();
 
   let busy = $state<string | undefined>();
+  /** The server being registered or unregistered: sbx takes a while. */
+  let changing = $state<string | undefined>();
+
+  const REGISTRATION_LABELS = {
+    missing: "Not registered",
+    ready: "Registered",
+    stale: "Not usable",
+    unusable: "Not usable",
+  } as const;
+
+  const change =
+    (server: string): SubmitFunction =>
+    () => {
+      changing = server;
+      return async ({ update }) => {
+        await update();
+        changing = undefined;
+      };
+    };
 
   // Signing in leaves the Panel for the server's own page. Through fetch, like
   // every form here: a plain form post would carry no Origin, as the Panel
@@ -35,6 +54,15 @@
 {/if}
 {#if form?.message !== undefined}
   <p class="error" role="alert">{form.message}</p>
+{/if}
+{#if form?.left !== undefined && form.left.length > 0}
+  <div class="error" role="alert">
+    <p>
+      {form.unregistered} is unregistered, but sbx refused to remove some of it. Run
+      these on your machine:
+    </p>
+    <pre>{form.left.join("\n")}</pre>
+  </div>
 {/if}
 
 <h2>Waiting for you</h2>
@@ -112,6 +140,7 @@
         <th>Endpoint</th>
         <th>Hold</th>
         <th>Sign-in</th>
+        <th>In sbx</th>
         <th>Allowed without asking</th>
       </tr>
     </thead>
@@ -148,6 +177,58 @@
                   <input type="hidden" name="server" value={server.name} />
                   <button type="submit">Sign out</button>
                 </form>
+              {/if}
+            {/if}
+          </td>
+          <td class="registration">
+            {#if server.registration === undefined}
+              <span class="hint">Unknown</span>
+            {:else}
+              {@const { detail, state } = server.registration}
+              {@const needsSignIn =
+                server.signIn !== undefined && !server.signIn.signedIn}
+              <span class={{ "signed-out": state !== "ready" }}
+                >{REGISTRATION_LABELS[state]}</span
+              >
+              {#if state !== "ready"}
+                <form
+                  method="POST"
+                  action="?/register"
+                  use:enhance={change(server.name)}
+                >
+                  <input type="hidden" name="server" value={server.name} />
+                  <button
+                    type="submit"
+                    class="primary"
+                    disabled={changing !== undefined || needsSignIn}
+                    title={needsSignIn
+                      ? "Sign in first: sbx connects to the server when it registers it"
+                      : `sbx mcp add ${server.name}, for every sandbox to load`}
+                    >{changing === server.name
+                      ? "Registering…"
+                      : state === "missing"
+                        ? "Register"
+                        : "Register again"}</button
+                  >
+                </form>
+              {/if}
+              {#if state !== "missing"}
+                <form
+                  method="POST"
+                  action="?/unregister"
+                  use:enhance={change(server.name)}
+                >
+                  <input type="hidden" name="server" value={server.name} />
+                  <button
+                    type="submit"
+                    disabled={changing !== undefined}
+                    title="Sandboxes that loaded it lose its tools"
+                    >Unregister</button
+                  >
+                </form>
+              {/if}
+              {#if detail !== undefined}
+                <p class="hint detail">{detail}</p>
               {/if}
             {/if}
           </td>
@@ -297,18 +378,31 @@
     white-space: nowrap;
   }
 
-  .sign-in form {
+  .sign-in form,
+  .registration form {
     display: inline;
     margin-left: 0.4rem;
   }
 
-  .sign-in button {
+  .sign-in button,
+  .registration button {
     padding: 0.1rem 0.6rem;
     font-size: 0.85rem;
   }
 
   .signed-out {
     color: var(--warning-text);
+  }
+
+  .detail {
+    margin: 0.25rem 0 0;
+    max-width: 24rem;
+    font-size: 0.85rem;
+  }
+
+  .error p,
+  .error pre {
+    margin: 0;
   }
 
   .tools {

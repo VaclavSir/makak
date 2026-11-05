@@ -45,6 +45,15 @@ describe(createMcpStore, () => {
     await expect(store.identify(linear)).resolves.toBe("linear");
   });
 
+  it("lists the servers with a token", async () => {
+    await store.issue("linear");
+    await store.issue("gitlab");
+    await store.issue("gitlab");
+    await expect(store.issued()).resolves.toStrictEqual(["gitlab", "linear"]);
+    await store.revoke("gitlab");
+    await expect(store.issued()).resolves.toStrictEqual(["linear"]);
+  });
+
   it("never writes a token to the file", async () => {
     const token = await store.issue("gitlab", NOW);
     const text = await readFile(path.join(dir, "mcp.json"), "utf-8");

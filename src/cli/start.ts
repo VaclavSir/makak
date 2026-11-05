@@ -15,6 +15,7 @@ import { createApprovals } from "../server/mcp/approvals.ts";
 import { createAudit } from "../server/mcp/audit.ts";
 import { createOAuth, OAUTH_CALLBACK_PATH } from "../server/mcp/oauth.ts";
 import { createMcpProxy } from "../server/mcp/proxy.ts";
+import { createMcpRegistrations } from "../server/mcp/registrations.ts";
 import { resolveServers } from "../server/mcp/servers.ts";
 import { createMcpStore } from "../server/mcp/store.ts";
 import { createPanelServer, panelOrigin } from "../server/panel.ts";
@@ -209,18 +210,27 @@ export const start = async (options: StartOptions): Promise<void> => {
   const store = createSandboxStore(config.stateDir);
   const sandboxGit = createSandboxGit(tools.git);
   const servers = resolveServers(config.mcp);
+  const oauth = createOAuth({
+    redirectUri: `${origin}${OAUTH_CALLBACK_PATH}`,
+    servers: servers.flatMap(({ name, oauth: signIn, url }) =>
+      signIn === undefined ? [] : [{ name, scopes: signIn.scopes, url }]
+    ),
+    stateDir: config.stateDir,
+  });
+  const mcpStore = createMcpStore(config.stateDir);
   const mcp = {
     approvals: createApprovals(),
     audit: createAudit(config.stateDir),
-    oauth: createOAuth({
-      redirectUri: `${origin}${OAUTH_CALLBACK_PATH}`,
-      servers: servers.flatMap(({ name, oauth, url }) =>
-        oauth === undefined ? [] : [{ name, scopes: oauth.scopes, url }]
-      ),
-      stateDir: config.stateDir,
+    oauth,
+    registrations: createMcpRegistrations({
+      oauth,
+      origin,
+      sbx: tools.sbx,
+      servers,
+      store: mcpStore,
     }),
     servers,
-    store: createMcpStore(config.stateDir),
+    store: mcpStore,
   };
 
   setPanelContext({

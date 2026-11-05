@@ -4,6 +4,7 @@ import type { Approvals } from "./mcp/approvals.ts";
 import type { Audit } from "./mcp/audit.ts";
 import type { OAuth } from "./mcp/oauth.ts";
 import type { McpServer } from "./mcp/proxy.ts";
+import type { McpRegistrations } from "./mcp/registrations.ts";
 import type { McpStore } from "./mcp/store.ts";
 import type { SandboxGit } from "./sandbox-git.ts";
 import type { SandboxRuns } from "./sandbox-runs.ts";
@@ -19,6 +20,7 @@ export interface PanelContext {
     approvals: Approvals;
     audit: Audit;
     oauth: OAuth;
+    registrations: McpRegistrations;
     /** With their upstream headers: never send these to the browser. */
     servers: McpServer[];
     store: McpStore;

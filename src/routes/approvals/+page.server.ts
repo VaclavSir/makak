@@ -27,7 +27,7 @@ const shownUrl = (url: string) => {
 export const load: PageServerLoad = async ({ depends }) => {
   depends(MCP);
   const { config, mcp } = getPanelContext();
-  const { approvals, audit, oauth, servers, store } = mcp;
+  const { approvals, audit, oauth, registrations, servers, store } = mcp;
   // Never the servers' headers: they hold the credentials.
   const described = await orUserError(
     async () =>
@@ -46,14 +46,21 @@ export const load: PageServerLoad = async ({ depends }) => {
       )
   );
   const recent = await orUserError(() => audit.recent(AUDIT_LIMIT));
+  const registered = await orUserError(() => registrations.status());
   return {
     audit: recent.ok ? recent.value : [],
-    error: [described, recent]
+    error: [described, recent, registered]
       .flatMap((result) => (result.ok ? [] : [result.message]))
       .join(" "),
     origin: panelOrigin(config.panel.hostname, config.panel.port),
     pending: approvals.pending(),
-    servers: described.ok ? described.value : [],
+    servers: (described.ok ? described.value : []).map((server) => ({
+      ...server,
+      // Undefined when sbx couldn't say.
+      registration: registered.ok
+        ? registered.value.get(server.name)
+        : undefined,
+    })),
   };
 };
 
@@ -99,6 +106,17 @@ export const actions: Actions = {
     return result.ok ? { disallowed: tool } : result.failure;
   },
 
+  register: async ({ request }) => {
+    const server = field(await request.formData(), "server");
+    if (server === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().mcp.registrations.register(server)
+    );
+    return result.ok ? { registered: server } : result.failure;
+  },
+
   /** Sends the browser to the server's sign-in, which comes back to /oauth/callback. */
   signIn: async ({ request }) => {
     const server = field(await request.formData(), "server");
@@ -124,5 +142,18 @@ export const actions: Actions = {
       getPanelContext().mcp.oauth.signOut(server)
     );
     return result.ok ? { signedOut: server } : result.failure;
+  },
+
+  unregister: async ({ request }) => {
+    const server = field(await request.formData(), "server");
+    if (server === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().mcp.registrations.unregister(server)
+    );
+    return result.ok
+      ? { left: result.value, unregistered: server }
+      : result.failure;
   },
 };

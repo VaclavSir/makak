@@ -26,6 +26,8 @@ export interface McpStore {
   /** The server this token was issued for, if any. */
   identify: (token: string) => Promise<string | undefined>;
   revoke: (server: string) => Promise<void>;
+  /** The servers with a token, sorted. */
+  issued: () => Promise<string[]>;
   /** The tools allowed with "always allow", sorted. */
   allowed: (server: string) => Promise<string[]>;
   allow: (server: string, tool: string) => Promise<void>;
@@ -76,6 +78,13 @@ export const createMcpStore = (stateDir: string): McpStore => {
         state.tokens[digest(token)] = { createdAt: now.toISOString(), server };
       });
       return token;
+    },
+    issued: async () => {
+      const state = await file.read();
+      const servers = new Set(
+        Object.values(state.tokens).map((entry) => entry.server)
+      );
+      return [...servers].toSorted();
     },
     revoke: (server) =>
       file.update((state) => {

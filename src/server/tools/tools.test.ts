@@ -36,6 +36,16 @@ describe(exec, () => {
     ).rejects.toThrow(/timed out after 0.1s/u);
   });
 
+  it("writes the input to stdin, and closes it without", async () => {
+    const echo = "process.stdin.pipe(process.stdout)";
+    await expect(
+      exec(process.execPath, ["-e", echo], { input: "secret" })
+    ).resolves.toMatchObject({ stdout: "secret" });
+    await expect(
+      exec(process.execPath, ["-e", echo], { timeoutMs: 5000 })
+    ).resolves.toMatchObject({ stdout: "" });
+  });
+
   it("rejects when the command does not exist", async () => {
     await expect(exec("makak-no-such-command", [])).rejects.toThrow(
       /not installed or not on PATH/u
@@ -91,11 +101,13 @@ describe(execChecked, () => {
 
 const recording = (result: Partial<CommandResult> = {}) => {
   const calls: [string, readonly string[]][] = [];
-  const run: Exec = (command, args) => {
+  const inputs: (string | undefined)[] = [];
+  const run: Exec = (command, args, options) => {
     calls.push([command, args]);
+    inputs.push(options?.input);
     return Promise.resolve({ exitCode: 0, stderr: "", stdout: "", ...result });
   };
-  return { calls, run };
+  return { calls, inputs, run };
 };
 
 describe(createTools, () => {
@@ -173,6 +185,52 @@ describe(createTools, () => {
     ]);
   });
 
+  it("registers, lists, loads and removes MCP servers, names never as flags", async () => {
+    const { calls, run } = recording({ stdout: "[]" });
+    const tools = createTools(run);
+
+    await tools.sbx.mcpAdd({
+      // oxlint-disable-next-line no-template-curly-in-string -- sbx's placeholder
+      headers: ["Authorization: Bearer ${token}"],
+      name: "-x",
+      url: "https://makakctl.test/mcp/a/b",
+    });
+    await tools.sbx.mcpLoad("-x", "-y");
+    await tools.sbx.mcpRm("-x");
+    await tools.sbx.mcpList();
+    expect(calls).toStrictEqual([
+      [
+        "sbx",
+        [
+          "mcp",
+          "add",
+          "--url=https://makakctl.test/mcp/a/b",
+          // oxlint-disable-next-line no-template-curly-in-string -- sbx's placeholder
+          "--header=Authorization: Bearer ${token}",
+          "--skip-ssrf-check",
+          "--",
+          "-x",
+        ],
+      ],
+      ["sbx", ["mcp", "load", "--sandbox=-y", "--", "-x"]],
+      ["sbx", ["mcp", "rm", "--force", "--", "-x"]],
+      ["sbx", ["mcp", "ls", "--json"]],
+    ]);
+  });
+
+  it("passes a secret on stdin, never as an argument", async () => {
+    const { calls, inputs, run } = recording();
+    const tools = createTools(run);
+
+    await tools.sbx.secretSet("mcp:a-b:token", "s3cret");
+    await tools.sbx.secretRm("mcp:a-b:token");
+    expect(calls).toStrictEqual([
+      ["sbx", ["secret", "set", "--force", "--", "mcp:a-b:token"]],
+      ["sbx", ["secret", "rm", "--force", "--", "mcp:a-b:token"]],
+    ]);
+    expect(inputs).toStrictEqual(["s3cret", undefined]);
+  });
+
   it("reports everything sbx printed when it fails", async () => {
     const { run } = recording({
       exitCode: 1,
@@ -220,6 +278,28 @@ describe(createFakeSbx, () => {
     await sbx.rm("new");
     await expect(statusOf("new")).resolves.toBeUndefined();
     await expect(sbx.stop("new")).rejects.toThrow(/no sandbox named new/u);
+  });
+
+  it("reports a registered server usable once its header secret is set", async () => {
+    const sbx = createFakeSbx();
+    await sbx.mcpAdd({
+      // oxlint-disable-next-line no-template-curly-in-string -- sbx's placeholder
+      headers: ["Authorization: Bearer ${token}"],
+      name: "gitlab",
+      url: "https://makakctl.test/mcp/gitlab",
+    });
+    await expect(sbx.mcpList()).resolves.toMatchObject([
+      { nextStep: "sbx secret set mcp:gitlab:token", status: "needs-secret" },
+    ]);
+    await sbx.secretSet("mcp:gitlab:token", "t");
+    await expect(sbx.mcpList()).resolves.toMatchObject([
+      { name: "gitlab", status: "ready" },
+    ]);
+    await expect(
+      sbx.mcpAdd({ headers: [], name: "gitlab", url: "https://x.test/" })
+    ).rejects.toThrow(/already exists/u);
+    await sbx.mcpRm("gitlab");
+    await expect(sbx.mcpList()).resolves.toStrictEqual([]);
   });
 });
 

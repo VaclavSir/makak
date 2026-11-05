@@ -15,7 +15,7 @@ The directory is `~/makak/envs` unless `envDir` says otherwise; see [configurati
 
 1. **Discovery.** Every `*.sbxenv.yaml` file in the env directory is offered, sorted by name. Files whose names start with `00-` start out checked. Subdirectories and other files are ignored.
 2. **The form.** The Panel merges the checked files and generates a field for each arg they declare under `args:`. `description` becomes the field's help text, `enum` a dropdown, `pattern` a validation rule, and `required` makes the field mandatory. A field left empty falls back to the file's `default`.
-3. **The name.** You name the sandbox, and the Panel passes it as `--name`. If the files declare an arg called `sandbox`, the Panel fills it with the same name and doesn't ask for it. There is no built-in reference to the sandbox name, so this is how a file uses it, e.g. in a per-sandbox MCP registration.
+3. **The name.** You name the sandbox, and the Panel passes it as `--name`. If the files declare an arg called `sandbox`, the Panel fills it with the same name and doesn't ask for it. There is no built-in reference to the sandbox name, so this is how a file uses it, e.g. in an environment variable.
 4. **The plan.** _Show the plan_ runs `sbx env plan` and shows what it prints, with the [workflow warnings](#workflow-warnings). Nothing is applied yet.
 5. **Applying.** _Approve and create_ runs `sbx env run --detach --force` with the same files and args. `--force` approves the plan for that one invocation. The Panel first checks that no file changed since the plan was shown, and asks you to review the new plan if one did.
 6. **The record.** The Panel records the files, in order, and the args, and replays them for every later `sbx env` command. `sbx env` needs the same files, args and name to find the same sandbox again. Fields start out filled with their defaults, and those values are recorded like any other, so changing a default in a file later doesn't change existing sandboxes or recreate them differently. Clear a field to leave it to the file's default instead.
@@ -63,4 +63,5 @@ Warnings never block anything. `sbx env plan` is the authority on what a sandbox
 Two parts of the workflow live outside env files, and the Panel doesn't check them yet:
 
 - **The forge is denied.** That is network policy, set with `sbx policy deny network` (see `sbx policy --help`), not in env files.
-- **MCP servers are static.** `--static-mcp` exists only on `sbx create` and `sbx run`; env files can't set it.
+- **MCP servers are static.** `--static-mcp` exists only on `sbx create` and `sbx run`; env files can't set it. Without it, the sbx gateway offers the agent `mcp-find` and `mcp-add`, so it can add servers that bypass the Panel.
+- **The Panel's MCP servers.** Env files can name an MCP server only with a `url` or `command`, and can't give it headers, so they can't name the Panel's registrations. The Panel loads those itself.

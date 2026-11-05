@@ -44,6 +44,7 @@ export const userMessage = (error: unknown): string | undefined =>
     "GitError",
     "LifecycleError",
     "OAuthError",
+    "RegistrationError",
     "RunError",
     "StateError",
   ].includes(error.name)

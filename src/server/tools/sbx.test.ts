@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CommandError } from "./exec.ts";
-import { parseSandboxList } from "./sbx.ts";
+import { parseMcpList, parseSandboxList } from "./sbx.ts";
 
 // Real output of sbx, with paths shortened.
 const SAMPLE = `[
@@ -89,5 +89,67 @@ describe(parseSandboxList, () => {
   ])("rejects %s", (_, stdout, message) => {
     expect(() => parseSandboxList(stdout)).toThrow(CommandError);
     expect(() => parseSandboxList(stdout)).toThrow(message);
+  });
+});
+
+// Real output of `sbx mcp ls --json`, one entry cut.
+const MCP_SAMPLE = `[
+  {
+    "name": "gitlab",
+    "transport": "remote http",
+    "status": "ready",
+    "type": "remote",
+    "detail": "custom headers",
+    "gateway": {
+      "name": "LOCAL",
+      "local": true,
+      "operator": "managed by you",
+      "decision": "local",
+      "signed_in_as": "me"
+    }
+  },
+  {
+    "name": "probe",
+    "transport": "remote http",
+    "status": "needs-secret",
+    "type": "remote",
+    "detail": "1 header secret not set",
+    "next_step": "sbx secret set mcp:probe:token",
+    "gateway": {
+      "name": "LOCAL",
+      "local": true,
+      "operator": "managed by you",
+      "decision": "local",
+      "signed_in_as": "me"
+    }
+  }
+]`;
+
+describe(parseMcpList, () => {
+  it("parses real sbx output", () => {
+    expect(parseMcpList(MCP_SAMPLE)).toStrictEqual([
+      {
+        detail: "custom headers",
+        name: "gitlab",
+        nextStep: undefined,
+        status: "ready",
+      },
+      {
+        detail: "1 header secret not set",
+        name: "probe",
+        nextStep: "sbx secret set mcp:probe:token",
+        status: "needs-secret",
+      },
+    ]);
+    expect(parseMcpList("[]")).toStrictEqual([]);
+  });
+
+  it("names the command when the output isn't what it should be", () => {
+    expect(() => parseMcpList("nope")).toThrow(
+      new CommandError("`sbx mcp ls --json` did not print valid JSON")
+    );
+    expect(() => parseMcpList('[{"name":"x"}]')).toThrow(
+      /Unexpected `sbx mcp ls --json` output/u
+    );
   });
 });

@@ -18,8 +18,8 @@ import {
   RUN_TIMEOUT_MS,
 } from "./runs.ts";
 import type { Runs } from "./runs.ts";
-import { FAKE_SANDBOXES, parseSandboxList } from "./sbx.ts";
-import type { EnvSpec, Sandbox } from "./sbx.ts";
+import { FAKE_SANDBOXES, parseMcpList, parseSandboxList } from "./sbx.ts";
+import type { EnvSpec, McpListing, Sandbox } from "./sbx.ts";
 
 export type { Commit, Git, Ref } from "./git.ts";
 export type { PackageScripts, Run, Runs } from "./runs.ts";
@@ -49,6 +49,32 @@ export interface Sbx {
   rm: (name: string) => Promise<void>;
   /** `sbx version`, as printed. */
   version: () => Promise<string>;
+  /**
+   * `sbx mcp add` for a remote server, skipping the SSRF check: the Panel
+   * registers only its own endpoints, which are on loopback.
+   */
+  mcpAdd: (server: McpRegistration) => Promise<void>;
+  /** `sbx mcp load`: attaches a registered server to a running sandbox. */
+  mcpLoad: (server: string, sandbox: string) => Promise<void>;
+  /** `sbx mcp ls --json`: the registered servers, and whether they're usable. */
+  mcpList: () => Promise<McpListing[]>;
+  /** `sbx mcp rm --force`. */
+  mcpRm: (server: string) => Promise<void>;
+  /**
+   * `sbx secret set --force`, globally, with the value on stdin, never in
+   * args. Without a terminal, sbx asks for `--force` to replace a secret.
+   */
+  secretSet: (service: string, value: string) => Promise<void>;
+  /** `sbx secret rm --force`, of a global secret: sbx asks otherwise. */
+  secretRm: (service: string) => Promise<void>;
+}
+
+/** A remote MCP server as `sbx mcp add` registers it. */
+export interface McpRegistration {
+  /** `Name: value`, where a `${placeholder}` names a secret. */
+  headers: string[];
+  name: string;
+  url: string;
 }
 
 export interface Browser {
@@ -87,8 +113,13 @@ const output = ({ stderr, stdout }: CommandResult) =>
   [stdout.trim(), stderr.trim()].filter((text) => text !== "").join("\n");
 
 /** Runs sbx, rejecting on a non-zero exit with everything it printed. */
-const sbx = async (exec: Exec, args: string[], timeoutMs: number) => {
-  const result = await exec("sbx", args, { timeoutMs });
+const sbx = async (
+  exec: Exec,
+  args: string[],
+  timeoutMs: number,
+  input?: string
+) => {
+  const result = await exec("sbx", args, { input, timeoutMs });
   if (result.exitCode !== 0) {
     throw new CommandError(
       `\`sbx ${args.join(" ")}\` failed:\n${output(result) || `exit code ${result.exitCode}`}`
@@ -167,8 +198,58 @@ export const createTools = (
           timeoutMs: SBX_LIST_TIMEOUT_MS,
         })
       ),
+    mcpAdd: async ({ headers, name, url }) => {
+      await sbx(
+        exec,
+        [
+          "mcp",
+          "add",
+          `--url=${url}`,
+          ...headers.map((header) => `--header=${header}`),
+          "--skip-ssrf-check",
+          "--",
+          name,
+        ],
+        SBX_CHANGE_TIMEOUT_MS
+      );
+    },
+    mcpList: async () =>
+      parseMcpList(
+        await execChecked(exec, "sbx", ["mcp", "ls", "--json"], {
+          timeoutMs: SBX_LIST_TIMEOUT_MS,
+        })
+      ),
+    mcpLoad: async (server, sandbox) => {
+      await sbx(
+        exec,
+        ["mcp", "load", `--sandbox=${sandbox}`, "--", server],
+        SBX_CHANGE_TIMEOUT_MS
+      );
+    },
+    mcpRm: async (server) => {
+      await sbx(
+        exec,
+        ["mcp", "rm", "--force", "--", server],
+        SBX_CHANGE_TIMEOUT_MS
+      );
+    },
     rm: async (name) => {
       await sbx(exec, ["rm", "--force", "--", name], SBX_CHANGE_TIMEOUT_MS);
+    },
+    secretRm: async (service) => {
+      await sbx(
+        exec,
+        ["secret", "rm", "--force", "--", service],
+        SBX_CHANGE_TIMEOUT_MS
+      );
+    },
+    secretSet: async (service, value) => {
+      await sbx(
+        exec,
+        ["secret", "set", "--force", "--", service],
+        SBX_CHANGE_TIMEOUT_MS,
+        value
+      );
     },
     start: async (name) => {
       await sbx(
@@ -209,6 +290,9 @@ export const createFakeSbx = (): Sbx => {
   const remove = (name: string) => {
     sandboxes.splice(sandboxes.indexOf(find(name)), 1);
   };
+  /** Registered servers, with the secrets their headers name. */
+  const servers = new Map<string, string[]>();
+  const secrets = new Set<string>();
 
   return {
     envPlan: (spec) => Promise.resolve(fakePlan(spec)),
@@ -236,9 +320,59 @@ export const createFakeSbx = (): Sbx => {
       return Promise.resolve(`(fake) ${name} is running`);
     },
     list: () => Promise.resolve(structuredClone(sandboxes)),
+    mcpAdd: async ({ headers, name }) => {
+      await Promise.resolve();
+      if (servers.has(name)) {
+        throw new CommandError(`(fake) MCP server ${name} already exists`);
+      }
+      const placeholders = headers.flatMap((header) =>
+        [...header.matchAll(/\$\{(?<name>[^}]+)\}/gu)].map(
+          (match) => `mcp:${name}:${match.groups?.name ?? ""}`
+        )
+      );
+      servers.set(name, placeholders);
+    },
+    mcpList: () =>
+      Promise.resolve(
+        [...servers].map(([name, needed]) => {
+          const missing = needed.filter((secret) => !secrets.has(secret));
+          return missing.length === 0
+            ? {
+                detail: "custom headers",
+                name,
+                nextStep: undefined,
+                status: "ready",
+              }
+            : {
+                detail: `${missing.length} header secret not set`,
+                name,
+                nextStep: `sbx secret set ${missing[0]}`,
+                status: "needs-secret",
+              };
+        })
+      ),
+    mcpLoad: async (server, sandbox) => {
+      await Promise.resolve();
+      find(sandbox);
+      if (!servers.has(server)) {
+        throw new CommandError(`(fake) no MCP server named ${server}`);
+      }
+    },
+    mcpRm: async (server) => {
+      await Promise.resolve();
+      servers.delete(server);
+    },
     rm: async (name) => {
       await Promise.resolve();
       remove(name);
+    },
+    secretRm: async (service) => {
+      await Promise.resolve();
+      secrets.delete(service);
+    },
+    secretSet: async (service) => {
+      await Promise.resolve();
+      secrets.add(service);
     },
     start: async (name) => {
       await Promise.resolve();
