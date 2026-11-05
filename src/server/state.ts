@@ -22,6 +22,11 @@ const envSchema = z.object({
 const recordSchema = z.object({
   /** Set when the Panel created the sandbox: it is managed. */
   env: envSchema.optional(),
+  /**
+   * The MCP servers the Panel loaded into it, as far as the Panel knows: sbx
+   * can't say. Kept after removal, for creating it again from its config.
+   */
+  mcp: z.array(z.string()).default([]),
   notes: z.string().max(MAX_NOTES_LENGTH).default(""),
 });
 
@@ -38,11 +43,13 @@ export interface SandboxStore {
   list: () => Promise<Record<string, SandboxRecord>>;
   setNotes: (id: string, notes: string) => Promise<void>;
   setEnv: (id: string, env: EnvRecord) => Promise<void>;
+  /** Adds a server to, or takes one off, the servers loaded into it. */
+  setLoaded: (id: string, server: string, loaded: boolean) => Promise<void>;
   /** Deletes the record, notes included. */
   forget: (id: string) => Promise<void>;
 }
 
-const EMPTY_RECORD: SandboxRecord = { notes: "" };
+const EMPTY_RECORD: SandboxRecord = { mcp: [], notes: "" };
 
 /** In `<stateDir>/sandboxes.json`; see `createJsonFile` for how it is kept. */
 export const createSandboxStore = (stateDir: string): SandboxStore => {
@@ -70,6 +77,18 @@ export const createSandboxStore = (stateDir: string): SandboxStore => {
     setEnv: (id, env) =>
       update((state) => {
         state.sandboxes[id] = { ...EMPTY_RECORD, ...state.sandboxes[id], env };
+      }),
+    setLoaded: (id, server, loaded) =>
+      update((state) => {
+        const record = state.sandboxes[id] ?? { ...EMPTY_RECORD };
+        const servers = new Set(record.mcp);
+        if (loaded) {
+          servers.add(server);
+        } else {
+          servers.delete(server);
+        }
+        record.mcp = [...servers].toSorted();
+        state.sandboxes[id] = record;
       }),
     setNotes: (id, notes) => {
       if (notes.length > MAX_NOTES_LENGTH) {

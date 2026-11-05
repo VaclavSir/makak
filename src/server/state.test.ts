@@ -26,7 +26,7 @@ describe(createSandboxStore, () => {
 
   it("starts empty without creating anything", async () => {
     const store = createSandboxStore(stateDir());
-    await expect(store.get("a")).resolves.toStrictEqual({ notes: "" });
+    await expect(store.get("a")).resolves.toStrictEqual({ mcp: [], notes: "" });
     await expect(stat(stateDir())).rejects.toThrow(/ENOENT/u);
   });
 
@@ -35,9 +35,13 @@ describe(createSandboxStore, () => {
 
     const reopened = createSandboxStore(stateDir());
     await expect(reopened.get("a")).resolves.toStrictEqual({
+      mcp: [],
       notes: "for the shop\nfix",
     });
-    await expect(reopened.get("b")).resolves.toStrictEqual({ notes: "" });
+    await expect(reopened.get("b")).resolves.toStrictEqual({
+      mcp: [],
+      notes: "",
+    });
     const { mode } = await stat(stateFile());
     expect(mode.toString(8).slice(-3)).toBe("600");
   });
@@ -52,7 +56,7 @@ describe(createSandboxStore, () => {
 
     const saved = JSON.parse(await readFile(stateFile(), "utf-8")) as unknown;
     expect(saved).toStrictEqual({
-      sandboxes: { a: { notes: "3" }, b: { notes: "2" } },
+      sandboxes: { a: { mcp: [], notes: "3" }, b: { mcp: [], notes: "2" } },
     });
   });
 
@@ -72,8 +76,14 @@ describe(createSandboxStore, () => {
     );
 
     await store.setNotes("c", "new");
-    await expect(store.get("a")).resolves.toStrictEqual({ notes: "edited" });
-    await expect(store.get("b")).resolves.toStrictEqual({ notes: "added" });
+    await expect(store.get("a")).resolves.toStrictEqual({
+      mcp: [],
+      notes: "edited",
+    });
+    await expect(store.get("b")).resolves.toStrictEqual({
+      mcp: [],
+      notes: "added",
+    });
 
     await writeFile(stateFile(), "{ damaged");
     await expect(store.setNotes("a", "x")).rejects.toThrow(/damaged/u);
@@ -91,7 +101,25 @@ describe(createSandboxStore, () => {
 
     // Fixed by hand: picked up without a restart.
     await writeFile(file, '{"sandboxes": {"a": {"notes": "back"}}}');
-    await expect(store.get("a")).resolves.toStrictEqual({ notes: "back" });
+    await expect(store.get("a")).resolves.toStrictEqual({
+      mcp: [],
+      notes: "back",
+    });
+  });
+
+  it("records the MCP servers loaded into a sandbox", async () => {
+    const store = createSandboxStore(stateDir());
+    await store.setNotes("a", "notes");
+    await store.setLoaded("a", "linear", true);
+    await store.setLoaded("a", "gitlab", true);
+    await store.setLoaded("a", "gitlab", true);
+    await store.setLoaded("b", "gitlab", true);
+    await store.setLoaded("b", "gitlab", false);
+
+    await expect(store.list()).resolves.toStrictEqual({
+      a: { mcp: ["gitlab", "linear"], notes: "notes" },
+      b: { mcp: [], notes: "" },
+    });
   });
 
   describe("env records", () => {
@@ -109,7 +137,7 @@ describe(createSandboxStore, () => {
 
       await expect(
         createSandboxStore(stateDir()).get("a")
-      ).resolves.toStrictEqual({ env, notes: "notes" });
+      ).resolves.toStrictEqual({ env, mcp: [], notes: "notes" });
     });
 
     it("lists every record and forgets one", async () => {
@@ -119,7 +147,7 @@ describe(createSandboxStore, () => {
       await store.forget("a");
 
       await expect(store.list()).resolves.toStrictEqual({
-        b: { notes: "other" },
+        b: { mcp: [], notes: "other" },
       });
     });
   });

@@ -10,6 +10,7 @@ import {
   INCOMPLETE,
   jsonField,
 } from "#lib/server/actions.ts";
+import { mcpChoices } from "#lib/server/mcp.ts";
 import { getPanelContext } from "#server/context.ts";
 import { listEnvFiles } from "#server/envs.ts";
 import type { CreateRequest } from "#server/lifecycle.ts";
@@ -21,10 +22,11 @@ const ARG_FIELD = "arg:";
 const requestSchema = z.object({
   args: z.record(z.string(), z.string()),
   files: z.array(z.string()),
+  mcp: z.array(z.string()),
   name: z.string(),
 });
 
-/** The create form as a request: checked files, name and `arg:` fields. */
+/** The create form as a request: checked files and servers, name and `arg:` fields. */
 const readForm = (form: FormData): CreateRequest => {
   const args: Record<string, string> = {};
   for (const [field, value] of form) {
@@ -36,6 +38,7 @@ const readForm = (form: FormData): CreateRequest => {
   return {
     args,
     files: form.getAll("file").filter((file) => typeof file === "string"),
+    mcp: form.getAll("mcp").filter((server) => typeof server === "string"),
     name: typeof name === "string" ? name.trim() : "",
   };
 };
@@ -44,18 +47,26 @@ export const load: PageServerLoad = async ({ url }) => {
   const { config, sandboxes, store } = getPanelContext();
   const files = await listEnvFiles(config.envDir);
   const names = new Set(files.map(({ name }) => name));
+  const mcp = await mcpChoices();
+  const usable = new Set(
+    mcp.choices
+      .filter(({ problem }) => problem === undefined)
+      .map(({ name }) => name)
+  );
 
-  // A base layer such as 00-base.sbxenv.yaml starts out checked.
+  // A base layer such as 00-base.sbxenv.yaml starts out checked, and so does
+  // every MCP server that can be loaded: approvals gate each one's calls.
   let initial: CreateRequest = {
     args: {},
     files: [...names].filter((name) => name.startsWith("00-")),
+    mcp: [...usable],
     name: "",
   };
   let from: { missing: string[]; name: string } | undefined;
 
   const fromId = url.searchParams.get("from");
   if (fromId !== null) {
-    const { env } = await store.get(fromId);
+    const { env, mcp: loaded } = await store.get(fromId);
     if (env !== undefined) {
       const recorded = env.files.map((file) => ({
         inEnvDir: path.dirname(file) === config.envDir,
@@ -69,6 +80,7 @@ export const load: PageServerLoad = async ({ url }) => {
         files: recorded
           .filter(({ inEnvDir, name }) => inEnvDir && names.has(name))
           .map(({ name }) => name),
+        mcp: loaded.filter((server) => usable.has(server)),
         name: taken ? "" : env.name,
       };
       from = {
@@ -89,6 +101,7 @@ export const load: PageServerLoad = async ({ url }) => {
     files: files.map(({ args, error, name }) => ({ args, error, name })),
     from,
     initial,
+    mcp,
   };
 };
 

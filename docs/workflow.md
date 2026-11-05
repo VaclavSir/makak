@@ -136,7 +136,7 @@ flowchart LR
 
 ## A typical task
 
-1. **Start a sandbox.** In the Panel, choose the project to work on, any other projects to mount read-only, and the MCP servers you'll need.
+1. **Start a sandbox.** In the Panel, choose the project to work on, any other projects to mount read-only, and the MCP servers you'll need. You can load or unload servers later on the sandbox's page.
 2. **Work.** Prompt the agent from the Panel, a terminal or VS Code over SSH. Run the app and open it at its stable URL, e.g. `https://feature-a.makak.test:8000`.
 3. **Review.** When the code looks right, bring the branch to your host and push it to origin from the Panel.
 4. **Open a merge request.** Ask the agent to prepare one. Its MCP call waits in the Panel until you've read it and approved it.

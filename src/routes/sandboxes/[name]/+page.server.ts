@@ -46,6 +46,19 @@ export const actions: Actions = {
       : result.failure;
   },
 
+  loadMcp: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = targetOf(form, params.name);
+    const server = field(form, "server");
+    if (target === undefined || server === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().lifecycle.loadMcp(target, server)
+    );
+    return result.ok ? { mcp: `Loaded ${server}.` } : result.failure;
+  },
+
   notes: async ({ params, request }) => {
     const sandbox = await findSandbox(params.name);
     const form = await request.formData();
@@ -240,5 +253,18 @@ export const actions: Actions = {
       getPanelContext().sandboxRuns.stop(target.sandbox, run)
     );
     return result.ok ? { stopped: run } : result.failure;
+  },
+
+  unloadMcp: async ({ params, request }) => {
+    const form = await request.formData();
+    const target = targetOf(form, params.name);
+    const server = field(form, "server");
+    if (target === undefined || server === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const result = await attempt(() =>
+      getPanelContext().lifecycle.unloadMcp(target, server)
+    );
+    return result.ok ? { mcp: `Unloaded ${server}.` } : result.failure;
   },
 };

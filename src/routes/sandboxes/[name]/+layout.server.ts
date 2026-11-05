@@ -2,6 +2,7 @@ import { error as httpError } from "@sveltejs/kit";
 
 import { SANDBOX_PAGE } from "#lib/dependencies.ts";
 import { orUserError } from "#lib/server/actions.ts";
+import { mcpChoices } from "#lib/server/mcp.ts";
 import { findSandbox } from "#lib/server/sandbox.ts";
 import { getPanelContext } from "#server/context.ts";
 import type { Inspection } from "#server/lifecycle.ts";
@@ -58,6 +59,7 @@ export const load: LayoutServerLoad = async ({ depends, params }) => {
   return {
     ...inspection,
     maxNotesLength: MAX_NOTES_LENGTH,
+    mcpChoices: await mcpChoices(),
     proxy: { elevate, listeners, suffixes },
     // Streamed: asking the sandbox must not hold up the rest of the page.
     runs: runsOf(sandbox),

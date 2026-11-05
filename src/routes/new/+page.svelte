@@ -17,6 +17,8 @@
   // svelte-ignore state_referenced_locally
   let selected = $state<string[]>([...data.initial.files]);
   // svelte-ignore state_referenced_locally
+  let servers = $state<string[]>([...data.initial.mcp]);
+  // svelte-ignore state_referenced_locally
   let name = $state(data.initial.name);
   // svelte-ignore state_referenced_locally
   let values = $state<Record<string, string>>({ ...data.initial.args });
@@ -131,6 +133,39 @@
     </ul>
   {/if}
 
+  {#if data.mcp.choices.length > 0}
+    <h2>MCP servers</h2>
+    <p class="hint">
+      Loaded once it runs. Calls outside each server's allowlist wait for your
+      approval.
+    </p>
+    {#if data.mcp.error !== undefined}
+      <p class="file-error">{data.mcp.error}</p>
+    {/if}
+    <ul class="files">
+      {#each data.mcp.choices as server (server.name)}
+        <li>
+          <label>
+            <input
+              type="checkbox"
+              name="mcp"
+              value={server.name}
+              disabled={server.problem !== undefined}
+              bind:group={servers}
+            />
+            <code>{server.name}</code>
+          </label>
+          {#if server.problem !== undefined}
+            <span class="file-error"
+              >{server.problem} See
+              <a href="/approvals">MCP approvals</a>.</span
+            >
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   <h2>Sandbox</h2>
   <label class="field">
     <span class="label">Name</span>
@@ -214,6 +249,14 @@
 </form>
 
 {#if plan !== undefined}
+  {#if plan.request.mcp.length > 0}
+    <p class="hint then">
+      Then the Panel loads these MCP servers into it:
+      {#each plan.request.mcp as server, index (server)}{index > 0
+          ? ", "
+          : ""}<code>{server}</code>{/each}.
+    </p>
+  {/if}
   <PlanReview
     action="?/create"
     busyLabel="Creating… this can take a few minutes"
@@ -231,6 +274,10 @@
 {/if}
 
 <style>
+  .then {
+    margin-top: 1.5rem;
+  }
+
   .hint,
   .description {
     color: var(--muted);

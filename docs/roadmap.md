@@ -114,7 +114,7 @@ The only gate on the MCP channel.
 Candidates, not commitments:
 
 - sbx network-approval queue alongside the MCP queue.
-- Editing a running sandbox's network policy and loaded MCPs.
+- Editing a running sandbox's network policy.
 - OS notifications or a badge for pending approvals.
 - Merge request review flow.
 - Signing a browser in again without restarting the Panel, e.g. `makak open` talking to the running instance.

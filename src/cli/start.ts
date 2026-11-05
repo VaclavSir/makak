@@ -15,6 +15,7 @@ import { createApprovals } from "../server/mcp/approvals.ts";
 import { createAudit } from "../server/mcp/audit.ts";
 import { createMcpHealth } from "../server/mcp/health.ts";
 import type { McpHealth } from "../server/mcp/health.ts";
+import { createMcpLoads } from "../server/mcp/loads.ts";
 import { createOAuth, OAUTH_CALLBACK_PATH } from "../server/mcp/oauth.ts";
 import { createMcpProxy } from "../server/mcp/proxy.ts";
 import { createMcpRegistrations } from "../server/mcp/registrations.ts";
@@ -243,19 +244,20 @@ export const start = async (options: StartOptions): Promise<void> => {
     servers,
     upstream: createUpstream({ oauth }),
   });
+  const registrations = createMcpRegistrations({
+    health,
+    oauth,
+    origin,
+    sbx: tools.sbx,
+    servers,
+    store: mcpStore,
+  });
   const mcp = {
     approvals: createApprovals(),
     audit: createAudit(config.stateDir),
     health,
     oauth,
-    registrations: createMcpRegistrations({
-      health,
-      oauth,
-      origin,
-      sbx: tools.sbx,
-      servers,
-      store: mcpStore,
-    }),
+    registrations,
     servers,
     store: mcpStore,
   };
@@ -264,6 +266,12 @@ export const start = async (options: StartOptions): Promise<void> => {
     config,
     lifecycle: createLifecycle({
       envDir: config.envDir,
+      mcp: createMcpLoads({
+        health,
+        registrations,
+        sbx: tools.sbx,
+        servers,
+      }),
       sandboxGit,
       sandboxes,
       sbx: tools.sbx,

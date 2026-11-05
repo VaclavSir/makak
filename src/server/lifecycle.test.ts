@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createLifecycle, isLifecycleError, userMessage } from "./lifecycle.ts";
 import type { CreateRequest, Lifecycle } from "./lifecycle.ts";
+import type { McpLoads } from "./mcp/loads.ts";
 import type { SandboxGit, Work } from "./sandbox-git.ts";
 import { createSandboxes } from "./sandboxes.ts";
 import { createSandboxStore } from "./state.ts";
@@ -111,6 +112,7 @@ describe(createLifecycle, () => {
   const request: CreateRequest = {
     args: { agent: "codex", project: "/p" },
     files: ["00-base.sbxenv.yaml"],
+    mcp: [],
     name: "new-one",
   };
   const basePath = () => path.join(envDir, "00-base.sbxenv.yaml");
@@ -130,6 +132,38 @@ describe(createLifecycle, () => {
   const created = async (createRequest = request) => {
     const { hashes } = await lifecycle.planCreate(createRequest);
     return lifecycle.create(createRequest, hashes);
+  };
+
+  /** Loads into nothing, recording each; `refuse` names servers to fail. */
+  const stubLoads = (refuse: string[] = []) => {
+    const loads: string[][] = [];
+    const mcp: McpLoads = {
+      load: (server, sandbox) => {
+        loads.push(["load", server, sandbox]);
+        return refuse.includes(server)
+          ? Promise.reject(new CommandError(`sbx couldn't load ${server}`))
+          : Promise.resolve();
+      },
+      problems: (servers) =>
+        Promise.resolve(
+          servers
+            .filter((server) => server === "jira")
+            .map((server) => `${server} isn't registered with sbx.`)
+        ),
+      unload: (server, sandbox) => {
+        loads.push(["unload", server, sandbox]);
+        return Promise.resolve();
+      },
+    };
+    lifecycle = createLifecycle({
+      envDir,
+      mcp,
+      sandboxGit: sandboxGit.git,
+      sandboxes: createSandboxes(sbx),
+      sbx,
+      store,
+    });
+    return loads;
   };
 
   beforeEach(async () => {
@@ -249,6 +283,7 @@ describe(createLifecycle, () => {
       expect(changes()).toStrictEqual([["envRun", spec]]);
       await expect(store.get(sandbox.id)).resolves.toStrictEqual({
         env: { ...spec, createdAt: "2026-10-19T08:00:00.000Z" },
+        mcp: [],
         notes: "",
       });
     });
@@ -620,6 +655,72 @@ describe(createLifecycle, () => {
       await lifecycle.remove(target, "old-experiment", []);
       expect(changes()).toStrictEqual([["rm", "old-experiment"]]);
       await expect(store.list()).resolves.toStrictEqual({});
+    });
+  });
+
+  describe("MCP servers", () => {
+    it("loads the chosen servers once the sandbox runs, and records them", async () => {
+      const loads = stubLoads();
+      const sandbox = await created({
+        ...request,
+        mcp: ["linear", "gitlab", "linear"],
+      });
+
+      expect(loads).toStrictEqual([
+        ["load", "linear", "new-one"],
+        ["load", "gitlab", "new-one"],
+      ]);
+      const { mcp } = await lifecycle.inspect(sandbox);
+      expect(mcp).toStrictEqual(["gitlab", "linear"]);
+    });
+
+    it("plans no sandbox with a server that can't be loaded", async () => {
+      const loads = stubLoads();
+      await expect(
+        lifecycle.planCreate({ ...request, mcp: ["jira"] })
+      ).rejects.toThrow("jira isn't registered with sbx.");
+      expect(loads).toStrictEqual([]);
+    });
+
+    it("keeps a sandbox whose servers didn't all load, and says which", async () => {
+      stubLoads(["gitlab"]);
+      await expect(
+        created({ ...request, mcp: ["gitlab", "linear"] })
+      ).rejects.toThrow(
+        "new-one was created, but not every MCP server could be loaded into it:\nsbx couldn't load gitlab\nLoad them from its page once that's fixed."
+      );
+      const sandbox = await existing("new-one");
+      await expect(store.get(sandbox.id)).resolves.toMatchObject({
+        mcp: ["linear"],
+      });
+    });
+
+    it("loads and unloads one server, for the sandbox the page showed", async () => {
+      const loads = stubLoads();
+      const sandbox = await existing("claude-makak");
+      await lifecycle.loadMcp(sandbox, "linear");
+      await expect(store.get(sandbox.id)).resolves.toMatchObject({
+        mcp: ["linear"],
+      });
+      await lifecycle.unloadMcp(sandbox, "linear");
+      await expect(store.get(sandbox.id)).resolves.toMatchObject({ mcp: [] });
+
+      await expect(lifecycle.loadMcp(sandbox, "jira")).rejects.toThrow(
+        "jira isn't registered with sbx."
+      );
+      await expect(
+        lifecycle.loadMcp({ ...sandbox, id: "other" }, "linear")
+      ).rejects.toThrow(/replaced by a new sandbox/u);
+      expect(loads).toStrictEqual([
+        ["load", "linear", "claude-makak"],
+        ["unload", "linear", "claude-makak"],
+      ]);
+    });
+
+    it("gives no servers without the Panel's MCP", async () => {
+      await expect(
+        lifecycle.planCreate({ ...request, mcp: ["linear"] })
+      ).rejects.toThrow("The Panel has no MCP servers to give sandboxes.");
     });
   });
 });

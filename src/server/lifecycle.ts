@@ -15,6 +15,7 @@ import {
   readEnvFile,
 } from "./envs.ts";
 import type { EnvFile } from "./envs.ts";
+import type { McpLoads } from "./mcp/loads.ts";
 import type { GitStatus, SandboxGit, Work } from "./sandbox-git.ts";
 import type { Sandboxes } from "./sandboxes.ts";
 import type { EnvRecord, SandboxStore } from "./state.ts";
@@ -43,6 +44,7 @@ export const userMessage = (error: unknown): string | undefined =>
     "CommandError",
     "GitError",
     "LifecycleError",
+    "LoadError",
     "OAuthError",
     "RegistrationError",
     "RunError",
@@ -57,6 +59,8 @@ export interface CreateRequest {
   args: Record<string, string>;
   /** File names in the env directory. */
   files: string[];
+  /** MCP servers to load into it once it runs. */
+  mcp: string[];
   name: string;
 }
 
@@ -101,6 +105,8 @@ export interface Inspection {
   envProblem: string | undefined;
   /** Undefined when the sandbox isn't in clone mode. */
   git: GitStatus | undefined;
+  /** The MCP servers the Panel loaded into it. */
+  mcp: string[];
   notes: string;
   removal: Removal;
   /** Workflow warnings, from the env files as they are now. */
@@ -116,6 +122,9 @@ export interface Lifecycle {
   start: (target: Target, hashes: string[]) => Promise<void>;
   /** Copies a running sandbox's branches first. */
   stop: (target: Target) => Promise<void>;
+  /** Loads a registered MCP server into a running sandbox, and records it. */
+  loadMcp: (target: Target, server: string) => Promise<void>;
+  unloadMcp: (target: Target, server: string) => Promise<void>;
   /** What the sandbox page shows about how the sandbox is managed. */
   inspect: (sandbox: Sandbox) => Promise<Inspection>;
   /**
@@ -131,6 +140,8 @@ export interface Lifecycle {
 
 export interface LifecycleOptions {
   envDir: string;
+  /** Without it, sandboxes get no MCP servers from the Panel. */
+  mcp?: McpLoads;
   sandboxGit: Pick<SandboxGit, "status" | "sync">;
   now?: () => Date;
   sandboxes: Sandboxes;
@@ -196,6 +207,7 @@ const quietly = async (followUp: () => Promise<unknown>) => {
 
 export const createLifecycle = ({
   envDir,
+  mcp,
   now = () => new Date(),
   sandboxGit,
   sandboxes,
@@ -235,8 +247,22 @@ export const createLifecycle = ({
     return sandbox;
   };
 
+  const mcpProblems = async (servers: readonly string[]) => {
+    if (servers.length === 0) {
+      return [];
+    }
+    return mcp === undefined
+      ? ["The Panel has no MCP servers to give sandboxes."]
+      : await mcp.problems(servers);
+  };
+
   /** Checks a create request, and turns it into what `sbx env` runs with. */
-  const prepareCreate = async ({ args, files: names, name }: CreateRequest) => {
+  const prepareCreate = async ({
+    args,
+    files: names,
+    mcp: chosen,
+    name,
+  }: CreateRequest) => {
     const problems: string[] = [];
     const invalidName = nameError(name);
     if (invalidName !== undefined) {
@@ -252,6 +278,8 @@ export const createLifecycle = ({
         problems.push(`${file} is not an env file name.`);
       }
     }
+    const servers = [...new Set(chosen)];
+    problems.push(...(await mcpProblems(servers)));
     if (problems.length > 0) {
       throw new LifecycleError(problems.join("\n"));
     }
@@ -286,8 +314,27 @@ export const createLifecycle = ({
     return {
       files,
       merged,
+      servers,
       spec: { args: Object.fromEntries(values), files: paths, name },
     };
+  };
+
+  /** Loads each server, recording the ones loaded. Returns the failures. */
+  const loadAll = async (sandbox: Sandbox, servers: readonly string[]) => {
+    const failures: string[] = [];
+    for (const server of servers) {
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- one sbx change at a time
+        await mcp?.load(server, sandbox.name);
+        // oxlint-disable-next-line no-await-in-loop -- one sbx change at a time
+        await store.setLoaded(sandbox.id, server, true);
+      } catch (error) {
+        failures.push(
+          userMessage(error) ?? `${server}: ${(error as Error).message}`
+        );
+      }
+    }
+    return failures;
   };
 
   const plan = async (
@@ -306,17 +353,18 @@ export const createLifecycle = ({
    * can all be read.
    */
   const recorded = async (id: string) => {
-    const { env, notes } = await store.get(id);
+    const { env, mcp: loaded, notes } = await store.get(id);
     if (env === undefined) {
-      return { env, files: undefined, notes, problem: undefined };
+      return { env, files: undefined, loaded, notes, problem: undefined };
     }
     const files = await Promise.all(env.files.map(readEnvFile));
     const broken = brokenFiles(files);
     return broken.length === 0
-      ? { env, files, notes, problem: undefined }
+      ? { env, files, loaded, notes, problem: undefined }
       : {
           env,
           files: undefined,
+          loaded,
           notes,
           problem: `The env files it was created from can't be read: ${broken.join("; ")}`,
         };
@@ -327,7 +375,7 @@ export const createLifecycle = ({
       exclusive(request.name, async () => {
         // Fresh, so a sandbox created a moment ago under this name is seen.
         sandboxes.invalidate();
-        const { files, spec } = await prepareCreate(request);
+        const { files, servers, spec } = await prepareCreate(request);
         checkUnchanged(files, hashes, SINCE_PLAN);
         const record = async () => {
           sandboxes.invalidate();
@@ -354,11 +402,17 @@ export const createLifecycle = ({
             `sbx finished, but there is no sandbox named ${spec.name}.`
           );
         }
+        const failures = await loadAll(sandbox, servers);
+        if (failures.length > 0) {
+          throw new LifecycleError(
+            `${sandbox.name} was created, but not every MCP server could be loaded into it:\n${failures.join("\n")}\nLoad them from its page once that's fixed.`
+          );
+        }
         return sandbox;
       }),
 
     inspect: async (sandbox) => {
-      const [{ env, files, notes, problem }, git] = await Promise.all([
+      const [{ env, files, loaded, notes, problem }, git] = await Promise.all([
         recorded(sandbox.id),
         sandboxGit.status(sandbox),
       ]);
@@ -369,6 +423,7 @@ export const createLifecycle = ({
           env,
           envProblem: problem,
           git,
+          mcp: loaded,
           notes,
           removal: {
             hasNotes,
@@ -386,6 +441,7 @@ export const createLifecycle = ({
         env,
         envProblem: undefined,
         git,
+        mcp: loaded,
         notes,
         removal: {
           hasNotes,
@@ -397,6 +453,17 @@ export const createLifecycle = ({
         warnings: envWarnings(merged, args),
       };
     },
+
+    loadMcp: (target, server) =>
+      exclusive(target.name, async () => {
+        const sandbox = await resolve(target);
+        const problems = await mcpProblems([server]);
+        if (problems.length > 0) {
+          throw new LifecycleError(problems.join("\n"));
+        }
+        await mcp?.load(server, sandbox.name);
+        await store.setLoaded(sandbox.id, server, true);
+      }),
 
     planCreate: async (request) => {
       const { files, merged, spec } = await prepareCreate(request);
@@ -475,6 +542,16 @@ export const createLifecycle = ({
         // Commits from the last minute, which sbx may not have copied yet.
         await quietly(() => sandboxGit.sync(sandbox));
         await sbx.stop(target.name);
+      }),
+
+    unloadMcp: (target, server) =>
+      exclusive(target.name, async () => {
+        const sandbox = await resolve(target);
+        if (mcp === undefined) {
+          throw new LifecycleError("The Panel has no MCP servers to unload.");
+        }
+        await mcp.unload(server, sandbox.name);
+        await store.setLoaded(sandbox.id, server, false);
       }),
   };
 };

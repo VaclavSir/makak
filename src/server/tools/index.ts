@@ -58,6 +58,8 @@ export interface Sbx {
   mcpLoad: (server: string, sandbox: string) => Promise<void>;
   /** `sbx mcp ls --json`: the registered servers, and whether they're usable. */
   mcpList: () => Promise<McpListing[]>;
+  /** `sbx mcp unload`: detaches a server from a running sandbox. */
+  mcpUnload: (server: string, sandbox: string) => Promise<void>;
   /** `sbx mcp rm --force`. */
   mcpRm: (server: string) => Promise<void>;
   /**
@@ -233,6 +235,13 @@ export const createTools = (
         SBX_CHANGE_TIMEOUT_MS
       );
     },
+    mcpUnload: async (server, sandbox) => {
+      await sbx(
+        exec,
+        ["mcp", "unload", `--sandbox=${sandbox}`, "--", server],
+        SBX_CHANGE_TIMEOUT_MS
+      );
+    },
     rm: async (name) => {
       await sbx(exec, ["rm", "--force", "--", name], SBX_CHANGE_TIMEOUT_MS);
     },
@@ -361,6 +370,10 @@ export const createFakeSbx = (): Sbx => {
     mcpRm: async (server) => {
       await Promise.resolve();
       servers.delete(server);
+    },
+    mcpUnload: async (_server, sandbox) => {
+      await Promise.resolve();
+      find(sandbox);
     },
     rm: async (name) => {
       await Promise.resolve();

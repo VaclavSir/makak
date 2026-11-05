@@ -99,3 +99,10 @@ export const toolRows = (
     })),
   ];
 };
+
+/** An MCP server a sandbox can be given. */
+export interface McpChoice {
+  name: string;
+  /** Why it can't be loaded now, if it can't. */
+  problem: string | undefined;
+}

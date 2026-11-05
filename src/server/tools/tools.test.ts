@@ -196,6 +196,7 @@ describe(createTools, () => {
       url: "https://makakctl.test/mcp/a/b",
     });
     await tools.sbx.mcpLoad("-x", "-y");
+    await tools.sbx.mcpUnload("-x", "-y");
     await tools.sbx.mcpRm("-x");
     await tools.sbx.mcpList();
     expect(calls).toStrictEqual([
@@ -213,6 +214,7 @@ describe(createTools, () => {
         ],
       ],
       ["sbx", ["mcp", "load", "--sandbox=-y", "--", "-x"]],
+      ["sbx", ["mcp", "unload", "--sandbox=-y", "--", "-x"]],
       ["sbx", ["mcp", "rm", "--force", "--", "-x"]],
       ["sbx", ["mcp", "ls", "--json"]],
     ]);

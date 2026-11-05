@@ -2,6 +2,7 @@
   import { sandboxCommands, publishCommand } from "#lib/commands.ts";
   import CopyField from "#lib/components/copy-field.svelte";
   import GitStatus from "#lib/components/git-status.svelte";
+  import McpServers from "#lib/components/mcp-servers.svelte";
   import NotesForm from "#lib/components/notes-form.svelte";
   import ProxyAddresses from "#lib/components/proxy-addresses.svelte";
   import RunsPanel from "#lib/components/runs-panel.svelte";
@@ -75,6 +76,19 @@
     {#each commands as { label, value } (label)}
       <CopyField {label} {value} />
     {/each}
+
+    {#if sandbox !== undefined && (data.mcpChoices.choices.length > 0 || data.mcp.length > 0)}
+      <h2>MCP servers</h2>
+      {#key data.sandbox.id}
+        <McpServers
+          choices={data.mcpChoices.choices}
+          error={data.mcpChoices.error}
+          id={data.sandbox.id}
+          loaded={data.mcp}
+          running={sandbox.status === "running"}
+        />
+      {/key}
+    {/if}
 
     {#if sandbox !== undefined}
       {#if data.warnings.length > 0}
