@@ -10,14 +10,17 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { createFakeStdio } from "../tools/stdio.ts";
 import { createApprovals } from "./approvals.ts";
 import type { Approvals } from "./approvals.ts";
 import { createAudit } from "./audit.ts";
 import type { Audit } from "./audit.ts";
+import { createLocalServers } from "./local.ts";
 import { createMcpProxy, MCP_PATH } from "./proxy.ts";
 import type { McpServer } from "./proxy.ts";
 import { createMcpStore } from "./store.ts";
 import type { McpStore } from "./store.ts";
+import { createUpstream } from "./upstream.ts";
 
 interface Received {
   body: unknown;
@@ -316,6 +319,56 @@ describe(createMcpProxy, () => {
       });
       expect(received).toStrictEqual([]);
       expect(logged.join("\n")).toContain("disk full");
+    });
+
+    it("gates a local server's tool calls like a remote one's", async () => {
+      const notesToken = await store.issue("notes");
+      const proxy = createMcpProxy({
+        approvals,
+        audit,
+        log: (message) => logged.push(message),
+        servers: [
+          {
+            allow: ["echo"],
+            headers: {},
+            holdMs: 50,
+            local: { args: [], command: "notes", cwd: undefined, env: {} },
+            name: "notes",
+          },
+        ],
+        store,
+        upstream: createUpstream({
+          local: createLocalServers({ spawn: createFakeStdio() }),
+        }),
+      });
+      const server = createServer((req, res) => {
+        proxy.handle(req, res, new URL(req.url ?? "/", "http://panel.test"));
+      });
+      const url = await listen(server);
+      const send = async (body: unknown, session?: string) =>
+        await fetch(`${url}/mcp/notes`, {
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${notesToken}`,
+            ...(session === undefined ? {} : { "Mcp-Session-Id": session }),
+          },
+          method: "POST",
+        });
+
+      const init = await send({ id: 0, jsonrpc: "2.0", method: "initialize" });
+      const session = init.headers.get("mcp-session-id") ?? undefined;
+      const allowed = await send(toolCall("echo", { a: 1 }), session);
+      const held = await send(toolCall("delete_all"), session);
+      server.close();
+
+      await expect(resultText(allowed)).resolves.toStrictEqual({
+        isError: false,
+        text: '{"a":1}',
+      });
+      await expect(resultText(held)).resolves.toMatchObject({
+        isError: true,
+        text: expect.stringContaining("needs the user's approval"),
+      });
     });
 
     it("logs why the server refused a request, and passes the refusal back", async () => {

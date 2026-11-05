@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ConfigError, loadConfig, parseConfig } from "./config.ts";
 
+/** Parses a config with one MCP server named x. */
+const parseServer = (server: object) => () =>
+  parseConfig({ mcp: { servers: [{ name: "x", ...server }] } });
+
 describe(parseConfig, () => {
   it("fills in defaults, with ~ expanded", () => {
     const config = parseConfig({});
@@ -118,6 +122,8 @@ describe(parseConfig, () => {
     expect(config.mcp.servers).toStrictEqual([
       {
         allow: ["get_issue"],
+        args: [],
+        env: {},
         headers: {
           Authorization: { env: "GITLAB_MCP_TOKEN" },
           "X-Team": "web",
@@ -166,6 +172,46 @@ describe(parseConfig, () => {
         },
       })
     ).toThrow(/sets the Authorization header itself/u);
+  });
+
+  it("reads local MCP servers, with variables literal or from the environment", () => {
+    const config = parseConfig({
+      mcp: {
+        servers: [
+          {
+            args: ["run", "-i", "--rm", "mcp/postgres"],
+            command: "docker",
+            dir: "~/work",
+            env: { PGPASSWORD: { env: "PG_PASSWORD" }, PGUSER: "me" },
+            name: "postgres",
+          },
+        ],
+      },
+    });
+    expect(config.mcp.servers[0]).toMatchObject({
+      args: ["run", "-i", "--rm", "mcp/postgres"],
+      command: "docker",
+      dir: path.join(homedir(), "work"),
+      env: { PGPASSWORD: { env: "PG_PASSWORD" }, PGUSER: "me" },
+    });
+  });
+
+  it("needs a url or a command, and the settings that go with it", () => {
+    expect(parseServer({})).toThrow(
+      /either a url, for a remote server, or a command/u
+    );
+    expect(parseServer({ command: "x", url: "https://x.test/mcp" })).toThrow(
+      /either a url/u
+    );
+    expect(parseServer({ args: ["a"], url: "https://x.test/mcp" })).toThrow(
+      /args is for local servers/u
+    );
+    expect(parseServer({ command: "x", headers: { A: "b" } })).toThrow(
+      /headers is for remote servers/u
+    );
+    expect(parseServer({ command: "x", oauth: {} })).toThrow(
+      /oauth is for remote servers/u
+    );
   });
 
   it("rejects relative paths", () => {

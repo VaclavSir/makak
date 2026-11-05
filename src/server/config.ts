@@ -37,17 +37,71 @@ const hostPath = z
 
 const port = z.number().int().min(1).max(65_535);
 
-// No hyphens: registrations are named `<server>-<sandbox>`, and sandbox names
-// may have them, so a hyphen in a server name would make the split ambiguous.
+// A server's name is its sbx registration's, and part of its secret's,
+// `mcp:<server>:token`: kept to characters that are safe in both.
 const MCP_SERVER_NAME = /^[a-z][a-z0-9_]*$/u;
 
 const holdSeconds = z.number().int().min(1).max(86_400);
 
-/** A header for the upstream server: literal, or read from the Panel's environment. */
+/**
+ * A header for a remote server, or a variable for a local one: literal, or
+ * read from the Panel's environment.
+ */
 const headerValue = z.union([
   z.string(),
   z.strictObject({ env: z.string().min(1) }),
 ]);
+
+/** What is wrong with an MCP server's settings, field by field. */
+const mcpServerIssues = (server: {
+  args: readonly string[];
+  command?: string;
+  dir?: string;
+  env: Record<string, unknown>;
+  headers: Record<string, unknown>;
+  name: string;
+  oauth?: unknown;
+  url?: string;
+}) => {
+  const issues: { field: string; message: string }[] = [];
+  if ((server.url === undefined) === (server.command === undefined)) {
+    issues.push({
+      field: "url",
+      message: `${server.name} needs either a url, for a remote server, or a command, for a local one`,
+    });
+  }
+  const local = server.command !== undefined;
+  const misplaced = local
+    ? [
+        Object.keys(server.headers).length > 0 && "headers",
+        server.oauth !== undefined && "oauth",
+      ]
+    : [
+        server.args.length > 0 && "args",
+        Object.keys(server.env).length > 0 && "env",
+        server.dir !== undefined && "dir",
+      ];
+  for (const field of misplaced) {
+    if (field !== false) {
+      issues.push({
+        field,
+        message: local
+          ? `${field} is for remote servers, which have a url`
+          : `${field} is for local servers, which have a command`,
+      });
+    }
+  }
+  const sendsAuthorization = Object.keys(server.headers).some(
+    (header) => header.toLowerCase() === "authorization"
+  );
+  if (server.oauth !== undefined && sendsAuthorization) {
+    issues.push({
+      field: "headers",
+      message: `${server.name} signs in with OAuth, which sets the Authorization header itself`,
+    });
+  }
+  return issues;
+};
 
 const isRegExp = (source: string) => {
   try {
@@ -69,6 +123,10 @@ const configSchema = z
           .array(
             z.strictObject({
               allow: z.array(z.string().min(1)).default([]),
+              args: z.array(z.string()).default([]),
+              command: z.string().min(1).optional(),
+              dir: hostPath.optional(),
+              env: z.record(z.string().min(1), headerValue).default({}),
               headers: z.record(z.string().min(1), headerValue).default({}),
               holdSeconds: holdSeconds.optional(),
               name: z
@@ -82,7 +140,7 @@ const configSchema = z
                   scopes: z.array(z.string().min(1)).default([]),
                 })
                 .optional(),
-              url: z.url({ protocol: /^https?$/u }),
+              url: z.url({ protocol: /^https?$/u }).optional(),
             })
           )
           .default([]),
@@ -218,14 +276,11 @@ const configSchema = z
           path: ["mcp", "servers", index, "name"],
         });
       }
-      const sendsAuthorization = Object.keys(server.headers).some(
-        (header) => header.toLowerCase() === "authorization"
-      );
-      if (server.oauth !== undefined && sendsAuthorization) {
+      for (const { field, message } of mcpServerIssues(server)) {
         ctx.addIssue({
           code: "custom",
-          message: `${server.name} signs in with OAuth, which sets the Authorization header itself`,
-          path: ["mcp", "servers", index, "headers"],
+          message,
+          path: ["mcp", "servers", index, field],
         });
       }
     }

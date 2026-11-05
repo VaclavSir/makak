@@ -16,6 +16,7 @@ import { createAudit } from "../server/mcp/audit.ts";
 import { createMcpHealth } from "../server/mcp/health.ts";
 import type { McpHealth } from "../server/mcp/health.ts";
 import { createMcpLoads } from "../server/mcp/loads.ts";
+import { createLocalServers } from "../server/mcp/local.ts";
 import { createOAuth, OAUTH_CALLBACK_PATH } from "../server/mcp/oauth.ts";
 import { createMcpProxy } from "../server/mcp/proxy.ts";
 import { createMcpRegistrations } from "../server/mcp/registrations.ts";
@@ -235,15 +236,16 @@ export const start = async (options: StartOptions): Promise<void> => {
   const oauth = createOAuth({
     redirectUri: `${origin}${OAUTH_CALLBACK_PATH}`,
     servers: servers.flatMap(({ name, oauth: signIn, url }) =>
-      signIn === undefined ? [] : [{ name, scopes: signIn.scopes, url }]
+      signIn === undefined || url === undefined
+        ? []
+        : [{ name, scopes: signIn.scopes, url }]
     ),
     stateDir: config.stateDir,
   });
   const mcpStore = createMcpStore(config.stateDir);
-  const health = createMcpHealth({
-    servers,
-    upstream: createUpstream({ oauth }),
-  });
+  const local = createLocalServers({ spawn: tools.stdio });
+  const upstream = createUpstream({ local, oauth });
+  const health = createMcpHealth({ servers, upstream });
   const registrations = createMcpRegistrations({
     health,
     oauth,
@@ -256,6 +258,7 @@ export const start = async (options: StartOptions): Promise<void> => {
     approvals: createApprovals(),
     audit: createAudit(config.stateDir),
     health,
+    local,
     oauth,
     registrations,
     servers,
@@ -297,7 +300,7 @@ export const start = async (options: StartOptions): Promise<void> => {
     auth,
     hostname,
     log,
-    mcp: createMcpProxy({ ...mcp, log }),
+    mcp: createMcpProxy({ ...mcp, log, upstream }),
     port,
     tls,
   });
@@ -314,6 +317,7 @@ export const start = async (options: StartOptions): Promise<void> => {
     for (const proxy of proxies) {
       proxy.close();
     }
+    local.stopAll();
     await app.close?.();
     process.exit(0);
   };

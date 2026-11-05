@@ -20,6 +20,8 @@ import {
 import type { Runs } from "./runs.ts";
 import { FAKE_SANDBOXES, parseMcpList, parseSandboxList } from "./sbx.ts";
 import type { EnvSpec, McpListing, Sandbox } from "./sbx.ts";
+import { createFakeStdio, spawnStdio } from "./stdio.ts";
+import type { SpawnStdio } from "./stdio.ts";
 
 export type { Commit, Git, Ref } from "./git.ts";
 export type { PackageScripts, Run, Runs } from "./runs.ts";
@@ -89,6 +91,8 @@ export interface Tools {
   /** Commands run in sandboxes, through `sbx exec`. */
   runs: Runs;
   sbx: Sbx;
+  /** Local MCP servers, run on the host. */
+  stdio: SpawnStdio;
 }
 
 /** `sbx exec` running the run helper; `--` so no name is read as a flag. */
@@ -161,7 +165,8 @@ const browserCommand = (platform: NodeJS.Platform): string | undefined => {
 export const createTools = (
   exec: Exec = realExec,
   platform: NodeJS.Platform = process.platform,
-  stream: Stream = realStream
+  stream: Stream = realStream,
+  stdio: SpawnStdio = spawnStdio
 ): Tools => ({
   browser: {
     open: async (url) => {
@@ -272,6 +277,7 @@ export const createTools = (
     },
     version: async () => firstLine(await execChecked(exec, "sbx", ["version"])),
   },
+  stdio,
 });
 
 const fakePlan = ({ args, files, name }: EnvSpec) =>
@@ -408,4 +414,5 @@ export const createFakeTools = (browser = createTools().browser): Tools => ({
   git: createFakeGit(),
   runs: createFakeRuns(),
   sbx: createFakeSbx(),
+  stdio: createFakeStdio(),
 });

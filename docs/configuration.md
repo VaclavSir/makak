@@ -53,6 +53,13 @@ A full example, with the defaults where there are any:
         "name": "tracker",
         "url": "https://tracker.example.com/mcp",
         "headers": { "Authorization": { "env": "TRACKER_MCP_AUTHORIZATION" } }
+      },
+      {
+        "name": "postgres",
+        "command": "docker",
+        "args": ["run", "-i", "--rm", "-e", "DATABASE_URI", "crystaldba/postgres-mcp"],
+        "env": { "DATABASE_URI": { "env": "SHOP_DATABASE_URI" } },
+        "allow": ["list_schemas", "list_objects"]
       }
     ]
   },
@@ -91,9 +98,13 @@ A full example, with the defaults where there are any:
 | `mcp.holdSeconds` | `240` | How long a tool call off the allowlist waits for your decision before the agent is told to call again; see [holds](#holds). |
 | `mcp.servers` | `[]` | MCP servers sandboxes reach through the Panel's [approval proxy](architecture.md#mcp-proxy). |
 | `mcp.servers[].name` |  | Lower-case letters, digits and underscores. Its endpoint is `/mcp/<name>`, registered with sbx as `<name>`. |
-| `mcp.servers[].url` |  | The server's Streamable HTTP endpoint. |
-| `mcp.servers[].oauth` |  | The Panel signs in to the server with OAuth, once, from the MCP approvals page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
-| `mcp.servers[].headers` | `{}` | Headers the Panel sends to the server, such as a token for servers that don't sign in with OAuth. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Not `Authorization` with `oauth`. |
+| `mcp.servers[].url` |  | The server's Streamable HTTP endpoint, for a remote server. A server has either `url` or `command`. |
+| `mcp.servers[].command` |  | For a local server: the command the Panel runs on this machine, talking MCP to it over stdin and stdout, one process per sandbox that loads it. It runs as you, with your permissions; prefer `docker run -i` to contain it. |
+| `mcp.servers[].args` | `[]` | The local server's arguments. They're shown on the approvals page: put secrets in `env`. |
+| `mcp.servers[].env` | `{}` | Variables for the local server, each the text itself or `{ "env": "NAME" }`, like headers. It gets these, and only a few of the Panel's own variables, such as `PATH` and `HOME`, so it never sees another server's credentials. |
+| `mcp.servers[].dir` | the Panel's | The local server's working directory. |
+| `mcp.servers[].oauth` |  | For a remote server: the Panel signs in to the server with OAuth, once, from the MCP approvals page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
+| `mcp.servers[].headers` | `{}` | For a remote server: headers the Panel sends to it, such as a token for servers that don't sign in with OAuth. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Not `Authorization` with `oauth`. |
 | `mcp.servers[].allow` | `[]` | Tools that run without asking. _Always allow_ and _Allow_ in the Panel add to this list without editing the file. |
 | `mcp.servers[].holdSeconds` | `mcp.holdSeconds` | The hold for this server. |
 | `envDir` | `~/makak/envs` | The env directory: the `*.sbxenv.yaml` files to create sandboxes from; see [env files](env-files.md). |

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream } from "node:stream/web";
 
+import type { StdioCommand } from "../tools/stdio.ts";
 import type { Approvals, Outcome } from "./approvals.ts";
 import type { Audit, AuditEntry } from "./audit.ts";
 import { reasonOf } from "./health.ts";
@@ -9,6 +10,7 @@ import type { McpHealth } from "./health.ts";
 import type { OAuth } from "./oauth.ts";
 import type { McpStore } from "./store.ts";
 import { createUpstream, failureOf, SignedOutError } from "./upstream.ts";
+import type { Upstream } from "./upstream.ts";
 
 // The MCP approval proxy: one endpoint per server, at `/mcp/<server>`, shared
 // by every sandbox the server is loaded into, passing everything through to
@@ -19,15 +21,22 @@ import { createUpstream, failureOf, SignedOutError } from "./upstream.ts";
 /** Reserved for the endpoints: no page of the Panel may live under it. */
 export const MCP_PATH = "/mcp/";
 
-/** A wrapped server, with its upstream headers resolved. */
+/**
+ * A wrapped server, with its upstream headers and its environment resolved:
+ * a remote one, at `url`, or a local one, which the Panel runs itself.
+ */
 export interface McpServer {
   allow: readonly string[];
+  /** Remote servers only. */
   headers: Record<string, string>;
   holdMs: number;
+  /** Local servers only: the command, run on the host. */
+  local?: StdioCommand;
   name: string;
-  /** Signs in with OAuth: the Panel's token goes with every call. */
+  /** Remote servers only. Signs in with OAuth: the Panel's token goes with every call. */
   oauth?: { scopes: readonly string[] };
-  url: string;
+  /** Remote servers only. */
+  url?: string;
 }
 
 export interface McpProxyOptions {
@@ -40,6 +49,8 @@ export interface McpProxyOptions {
   servers: readonly McpServer[];
   store: Pick<McpStore, "allowed" | "identify">;
   fetch?: typeof fetch;
+  /** How requests reach the servers; by default with `fetch` and `oauth`. */
+  upstream?: Upstream;
   now?: () => number;
 }
 
@@ -155,9 +166,10 @@ export const createMcpProxy = ({
   oauth,
   servers,
   store,
+  upstream: given,
 }: McpProxyOptions): McpProxy => {
   const byName = new Map(servers.map((server) => [server.name, server]));
-  const upstream = createUpstream({ fetch: fetchUpstream, oauth });
+  const upstream = given ?? createUpstream({ fetch: fetchUpstream, oauth });
 
   /** Logs a server's error, and keeps it for the approvals page. */
   const failed = (server: string, message: string) => {

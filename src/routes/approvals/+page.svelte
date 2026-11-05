@@ -139,7 +139,13 @@
     <section class="server">
       <header>
         <h3>{server.name}</h3>
-        <code class="upstream">{server.url}</code>
+        {#if server.local === undefined}
+          <code class="upstream">{server.url}</code>
+        {:else}
+          <code class="upstream" title="Run on this machine, by the Panel"
+            >$ {server.local.command}</code
+          >
+        {/if}
       </header>
       <dl>
         <dt>Check</dt>
@@ -260,6 +266,21 @@
             {/if}
           {/if}
         </dd>
+
+        {#if server.local !== undefined}
+          <dt>Running</dt>
+          <dd>
+            {server.local.processes === 0
+              ? "No process now: one starts for each sandbox that connects."
+              : `${server.local.processes} ${server.local.processes === 1 ? "process" : "processes"}, one for each session.`}
+            {#if server.local.stderr.length > 0}
+              <details>
+                <summary>Its output</summary>
+                <pre class="output">{server.local.stderr.join("\n")}</pre>
+              </details>
+            {/if}
+          </dd>
+        {/if}
 
         <dt>Endpoint</dt>
         <dd><code>{data.origin}/mcp/{server.name}</code></dd>
@@ -496,6 +517,13 @@
 
   .bad {
     color: var(--warning-text);
+  }
+
+  .output {
+    max-height: 16rem;
+    overflow: auto;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
   }
 
   .detail {

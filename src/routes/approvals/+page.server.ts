@@ -28,8 +28,16 @@ const shownUrl = (url: string) => {
 export const load: PageServerLoad = async ({ depends }) => {
   depends(MCP);
   const { config, mcp } = getPanelContext();
-  const { approvals, audit, health, oauth, registrations, servers, store } =
-    mcp;
+  const {
+    approvals,
+    audit,
+    health,
+    local,
+    oauth,
+    registrations,
+    servers,
+    store,
+  } = mcp;
   // Never the servers' headers: they hold the credentials.
   const described = await orUserError(
     async () =>
@@ -46,13 +54,18 @@ export const load: PageServerLoad = async ({ depends }) => {
             },
             holdSeconds: server.holdMs / 1000,
             lastError,
+            // The command as typed: its secrets belong in `env`, never shown.
+            local: server.local && {
+              ...local.status(server.name),
+              command: [server.local.command, ...server.local.args].join(" "),
+            },
             name: server.name,
             signIn:
               server.oauth === undefined
                 ? undefined
                 : await oauth.status(server.name),
             tools: toolRows(check?.ok ? check.tools : [], server.allow, always),
-            url: shownUrl(server.url),
+            url: server.url === undefined ? undefined : shownUrl(server.url),
           };
         })
       )

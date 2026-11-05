@@ -1,9 +1,11 @@
+import type { LocalServers } from "./local.ts";
 import type { OAuth } from "./oauth.ts";
 import type { McpServer } from "./proxy.ts";
 
 // Requests to a wrapped server, with the server's credentials: its configured
 // headers, or the Panel's OAuth token, refreshed once when the server refuses
-// it. The proxy and the server checks both send through this.
+// it. A local server's go to its process instead. The proxy and the server
+// checks both send through this.
 
 /** The server needs a sign-in the Panel doesn't have. */
 export class SignedOutError extends Error {
@@ -37,12 +39,27 @@ export type Upstream = (
 export const createUpstream =
   ({
     fetch: fetchUpstream = fetch,
+    local,
     oauth,
   }: {
     fetch?: typeof fetch;
+    local?: Pick<LocalServers, "request">;
     oauth?: Pick<OAuth, "accessToken" | "refresh" | "signOut">;
   }): Upstream =>
-  async (server, { body, headers, method, signal }) => {
+  async (server, request) => {
+    if (server.local !== undefined) {
+      if (local === undefined) {
+        throw new Error(
+          `The Panel can't run local servers such as ${server.name}`
+        );
+      }
+      return await local.request(server, request);
+    }
+    const { body, headers, method, signal } = request;
+    const { url } = server;
+    if (url === undefined) {
+      throw new Error(`${server.name} has neither a URL nor a command`);
+    }
     const sent = { ...headers, ...server.headers };
     const send = async (token: string | undefined) => {
       if (server.oauth !== undefined) {
@@ -51,7 +68,7 @@ export const createUpstream =
         }
         sent.authorization = `Bearer ${token}`;
       }
-      return await fetchUpstream(server.url, {
+      return await fetchUpstream(url, {
         body,
         headers: sent,
         method,

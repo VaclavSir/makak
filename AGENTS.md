@@ -53,7 +53,7 @@ These are not negotiable. A change that weakens one needs an explicit decision f
 - All calls to `sbx`, `git` and other host tools go through the adapter layer in `src/server/tools/`. Nothing else spawns processes, tests included.
 - Spawn with argument arrays (`execFile`/`spawn`), never through a shell or with interpolated command strings. Sandbox names, branch names and args are untrusted.
 - The adapter layer has a fake implementation, so the app and its tests run without `sbx`.
-- The Panel never owns long-running processes. Runs live inside the sandbox; the Panel only reads their state, so restarting the Panel or reloading the page loses nothing.
+- The Panel never owns long-running processes, with one exception: local MCP servers, which it runs on the host and stops when it exits. Runs live inside the sandbox; the Panel only reads their state, so restarting the Panel or reloading the page loses nothing.
 - Keep naming conventions rigid: `<server>` for MCP registrations and `mcp:<server>:token` for their secrets, `~/makak/handoffs/<sandbox>/` for handoffs. Cleanup relies on them.
 - Hostname suffixes, listener ports, the Panel hostname and similar settings come from configuration and are never hard-coded.
 - Prefer small, readable code over abstraction. Match the style of the surrounding code.
