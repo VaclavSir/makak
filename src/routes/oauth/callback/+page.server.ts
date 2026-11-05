@@ -30,12 +30,13 @@ export const actions: Actions = {
     if (code === undefined || state === undefined) {
       return fail(400, INCOMPLETE);
     }
-    const result = await attempt(() =>
-      getPanelContext().mcp.oauth.finish(state, code)
-    );
+    const { health, oauth } = getPanelContext().mcp;
+    const result = await attempt(() => oauth.finish(state, code));
     if (!result.ok) {
       return result.failure;
     }
+    // So the page shows what the sign-in made reachable, its tools.
+    await health.check(result.value);
     redirect(303, "/approvals");
   },
 };

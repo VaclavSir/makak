@@ -13,11 +13,14 @@ import { setPanelContext } from "../server/context.ts";
 import { createLifecycle } from "../server/lifecycle.ts";
 import { createApprovals } from "../server/mcp/approvals.ts";
 import { createAudit } from "../server/mcp/audit.ts";
+import { createMcpHealth } from "../server/mcp/health.ts";
+import type { McpHealth } from "../server/mcp/health.ts";
 import { createOAuth, OAUTH_CALLBACK_PATH } from "../server/mcp/oauth.ts";
 import { createMcpProxy } from "../server/mcp/proxy.ts";
 import { createMcpRegistrations } from "../server/mcp/registrations.ts";
 import { resolveServers } from "../server/mcp/servers.ts";
 import { createMcpStore } from "../server/mcp/store.ts";
+import { createUpstream } from "../server/mcp/upstream.ts";
 import { createPanelServer, panelOrigin } from "../server/panel.ts";
 import type { PanelApp } from "../server/panel.ts";
 import { createProxyServer } from "../server/proxy/proxy.ts";
@@ -199,6 +202,24 @@ const startProxy = async (
   return proxies;
 };
 
+/** Checks an MCP server, logging a failure. */
+const checkServer = async (health: McpHealth, name: string) => {
+  const result = await health.check(name);
+  if (!result.ok) {
+    log(`The ${name} MCP server failed its check: ${result.reason}`);
+  }
+};
+
+/** Checks every MCP server, in the background. */
+const checkServers = (
+  health: McpHealth,
+  servers: readonly { name: string }[]
+) => {
+  for (const { name } of servers) {
+    void checkServer(health, name);
+  }
+};
+
 export const start = async (options: StartOptions): Promise<void> => {
   const config = await loadConfig(options.configPath);
   const { hostname, port } = config.panel;
@@ -218,11 +239,17 @@ export const start = async (options: StartOptions): Promise<void> => {
     stateDir: config.stateDir,
   });
   const mcpStore = createMcpStore(config.stateDir);
+  const health = createMcpHealth({
+    servers,
+    upstream: createUpstream({ oauth }),
+  });
   const mcp = {
     approvals: createApprovals(),
     audit: createAudit(config.stateDir),
+    health,
     oauth,
     registrations: createMcpRegistrations({
+      health,
       oauth,
       origin,
       sbx: tools.sbx,
@@ -270,6 +297,7 @@ export const start = async (options: StartOptions): Promise<void> => {
   // Loopback only. The hostname resolves to 127.0.0.1; see docs/setup.md.
   await bind(server, port, "127.0.0.1", "The Panel");
   const proxies = await startProxy(config, origin, sandboxes);
+  checkServers(health, servers);
 
   const shutdown = async () => {
     log("Stopping");

@@ -94,7 +94,7 @@ A full example, with the defaults where there are any:
 | `mcp.servers[].url` |  | The server's Streamable HTTP endpoint. |
 | `mcp.servers[].oauth` |  | The Panel signs in to the server with OAuth, once, from the MCP approvals page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
 | `mcp.servers[].headers` | `{}` | Headers the Panel sends to the server, such as a token for servers that don't sign in with OAuth. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Not `Authorization` with `oauth`. |
-| `mcp.servers[].allow` | `[]` | Tools that run without asking. _Always allow_ in the Panel adds to this list without editing the file. |
+| `mcp.servers[].allow` | `[]` | Tools that run without asking. _Always allow_ and _Allow_ in the Panel add to this list without editing the file. |
 | `mcp.servers[].holdSeconds` | `mcp.holdSeconds` | The hold for this server. |
 | `envDir` | `~/makak/envs` | The env directory: the `*.sbxenv.yaml` files to create sandboxes from; see [env files](env-files.md). |
 | `handoffsDir` | `~/makak/handoffs` | Where each sandbox's handoff directory lives. |

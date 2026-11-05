@@ -2,6 +2,7 @@ import type { Config } from "./config.ts";
 import type { Lifecycle } from "./lifecycle.ts";
 import type { Approvals } from "./mcp/approvals.ts";
 import type { Audit } from "./mcp/audit.ts";
+import type { McpHealth } from "./mcp/health.ts";
 import type { OAuth } from "./mcp/oauth.ts";
 import type { McpServer } from "./mcp/proxy.ts";
 import type { McpRegistrations } from "./mcp/registrations.ts";
@@ -19,6 +20,7 @@ export interface PanelContext {
   mcp: {
     approvals: Approvals;
     audit: Audit;
+    health: McpHealth;
     oauth: OAuth;
     registrations: McpRegistrations;
     /** With their upstream headers: never send these to the browser. */

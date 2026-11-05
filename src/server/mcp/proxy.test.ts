@@ -103,6 +103,8 @@ describe(createMcpProxy, () => {
   let base: string;
   let dir: string;
   let logged: string[];
+  /** The errors the proxy told the health module of. */
+  let noted: string[];
   let proxyServer: Server;
   let received: Received[];
   let store: McpStore;
@@ -166,10 +168,14 @@ describe(createMcpProxy, () => {
     audit = createAudit(dir);
     approvals = createApprovals();
     logged = [];
+    noted = [];
     token = await store.issue("gitlab");
     const proxy = createMcpProxy({
       approvals,
       audit,
+      health: {
+        noteError: (server, message) => noted.push(`${server}: ${message}`),
+      },
       log: (message) => logged.push(message),
       servers: config(upstreamUrl),
       store,
@@ -326,6 +332,7 @@ describe(createMcpProxy, () => {
       expect(logged).toStrictEqual([
         'gitlab answered a POST with HTTP 403: {"error":"insufficient_scope"}',
       ]);
+      expect(noted).toStrictEqual(["gitlab: HTTP 403: insufficient_scope"]);
     });
 
     it("passes a tool always allowed", async () => {
@@ -348,6 +355,9 @@ describe(createMcpProxy, () => {
       });
       await expect(audit.recent(1)).resolves.toMatchObject([
         { outcome: "allowed" },
+      ]);
+      expect(noted).toStrictEqual([
+        expect.stringMatching(/^gitlab: Can't be reached: /u),
       ]);
     });
   });

@@ -1,4 +1,5 @@
 import type { Sbx } from "../tools/index.ts";
+import type { McpHealth } from "./health.ts";
 import type { OAuth } from "./oauth.ts";
 import { MCP_PATH } from "./proxy.ts";
 import type { McpStore } from "./store.ts";
@@ -36,6 +37,9 @@ export interface McpRegistrations {
 }
 
 export interface McpRegistrationsOptions {
+  /** The errors the server gave meanwhile, which explain sbx's failures. */
+  health?: Pick<McpHealth, "errorSince">;
+  now?: () => number;
   oauth: Pick<OAuth, "status">;
   /** The Panel's origin, which serves the endpoints. */
   origin: string;
@@ -62,6 +66,8 @@ const quietly = async (cleanup: () => Promise<unknown>) => {
 };
 
 export const createMcpRegistrations = ({
+  health,
+  now = Date.now,
   oauth,
   origin,
   sbx,
@@ -98,6 +104,7 @@ export const createMcpRegistrations = ({
         await sbx.mcpRm(name);
       }
       const token = await store.issue(name);
+      const started = now();
       try {
         // Stored first: sbx connects to the endpoint when it registers it.
         await sbx.secretSet(tokenSecret(name), token);
@@ -111,7 +118,15 @@ export const createMcpRegistrations = ({
       } catch (error) {
         await quietly(() => store.revoke(name));
         await quietly(() => sbx.secretRm(tokenSecret(name)));
-        throw error;
+        // sbx says only that connecting failed; the server says why.
+        const refusal = health?.errorSince(name, started);
+        if (refusal === undefined) {
+          throw error;
+        }
+        throw new RegistrationError(
+          `sbx couldn't register ${name}: connecting to it, the server answered ${refusal.message}`,
+          { cause: error }
+        );
       }
     },
 

@@ -9,7 +9,7 @@
   let { data, form }: PageProps = $props();
 
   let busy = $state<string | undefined>();
-  /** The server being registered or unregistered: sbx takes a while. */
+  /** `<action>:<server>` while sbx or the server is asked: it takes a while. */
   let changing = $state<string | undefined>();
 
   const REGISTRATION_LABELS = {
@@ -20,9 +20,9 @@
   } as const;
 
   const change =
-    (server: string): SubmitFunction =>
+    (action: string, server: string): SubmitFunction =>
     () => {
-      changing = server;
+      changing = `${action}:${server}`;
       return async ({ update }) => {
         await update();
         changing = undefined;
@@ -133,134 +133,201 @@
     config.
   </p>
 {:else}
-  <table>
-    <thead>
-      <tr>
-        <th>Server</th>
-        <th>Endpoint</th>
-        <th>Hold</th>
-        <th>Sign-in</th>
-        <th>In sbx</th>
-        <th>Allowed without asking</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each data.servers as server (server.name)}
-        <tr>
-          <td>
-            <strong>{server.name}</strong>
-            <code class="upstream">{server.url}</code>
-          </td>
-          <td><code>{data.origin}/mcp/{server.name}</code></td>
-          <td>{formatHold(server.holdSeconds)}</td>
-          <td class="sign-in">
-            {#if server.signIn === undefined}
-              <span class="hint">By config</span>
+  {#each data.servers as server (server.name)}
+    {@const needsSignIn =
+      server.signIn !== undefined && !server.signIn.signedIn}
+    <section class="server">
+      <header>
+        <h3>{server.name}</h3>
+        <code class="upstream">{server.url}</code>
+      </header>
+      <dl>
+        <dt>Check</dt>
+        <dd>
+          {#if server.check === undefined}
+            <span class="hint">Not checked yet.</span>
+          {:else}
+            {#if server.check.reason === undefined}
+              <span
+                >OK: it lists {server.check.tools}
+                {server.check.tools === 1 ? "tool" : "tools"}.</span
+              >
             {:else}
-              {#if server.signIn.signedIn}
-                <span>Signed in</span>
-              {:else}
-                <span class="signed-out">Not signed in</span>
-              {/if}
-              <form method="POST" action="?/signIn" use:enhance={leave}>
+              <span class="bad">Failed. {server.check.reason}</span>
+            {/if}
+            <span class="hint">{formatTime(server.check.at)}</span>
+          {/if}
+          <form
+            method="POST"
+            action="?/check"
+            use:enhance={change("check", server.name)}
+          >
+            <input type="hidden" name="server" value={server.name} />
+            <button
+              type="submit"
+              disabled={changing !== undefined}
+              title="Start a session with the server and list its tools, as the Panel"
+              >{changing === `check:${server.name}`
+                ? "Checking…"
+                : "Check"}</button
+            >
+          </form>
+        </dd>
+
+        {#if server.lastError !== undefined}
+          <dt>Last error</dt>
+          <dd>
+            <span class="bad">{server.lastError.message}</span>
+            <span class="hint">{formatTime(server.lastError.at)}</span>
+          </dd>
+        {/if}
+
+        <dt>Sign-in</dt>
+        <dd>
+          {#if server.signIn === undefined}
+            <span class="hint">Not needed</span>
+          {:else}
+            {#if server.signIn.signedIn}
+              <span>Signed in</span>
+            {:else}
+              <span class="bad">Not signed in</span>
+            {/if}
+            <form method="POST" action="?/signIn" use:enhance={leave}>
+              <input type="hidden" name="server" value={server.name} />
+              <button type="submit" class={{ primary: !server.signIn.signedIn }}
+                >{server.signIn.signedIn ? "Sign in again" : "Sign in"}</button
+              >
+            </form>
+            {#if server.signIn.signedIn}
+              <form method="POST" action="?/signOut" use:enhance>
+                <input type="hidden" name="server" value={server.name} />
+                <button type="submit">Sign out</button>
+              </form>
+            {/if}
+          {/if}
+        </dd>
+
+        <dt>In sbx</dt>
+        <dd>
+          {#if server.registration === undefined}
+            <span class="hint">Unknown</span>
+          {:else}
+            {@const { detail, state } = server.registration}
+            <span class={{ bad: state !== "ready" }}
+              >{REGISTRATION_LABELS[state]}</span
+            >
+            {#if state !== "ready"}
+              <form
+                method="POST"
+                action="?/register"
+                use:enhance={change("register", server.name)}
+              >
                 <input type="hidden" name="server" value={server.name} />
                 <button
                   type="submit"
-                  class={{ primary: !server.signIn.signedIn }}
-                  >{server.signIn.signedIn
-                    ? "Sign in again"
-                    : "Sign in"}</button
+                  class="primary"
+                  disabled={changing !== undefined || needsSignIn}
+                  title={needsSignIn
+                    ? "Sign in first: sbx connects to the server when it registers it"
+                    : `sbx mcp add ${server.name}, for every sandbox to load`}
+                  >{changing === `register:${server.name}`
+                    ? "Registering…"
+                    : state === "missing"
+                      ? "Register"
+                      : "Register again"}</button
                 >
               </form>
-              {#if server.signIn.signedIn}
-                <form method="POST" action="?/signOut" use:enhance>
-                  <input type="hidden" name="server" value={server.name} />
-                  <button type="submit">Sign out</button>
-                </form>
-              {/if}
             {/if}
-          </td>
-          <td class="registration">
-            {#if server.registration === undefined}
-              <span class="hint">Unknown</span>
-            {:else}
-              {@const { detail, state } = server.registration}
-              {@const needsSignIn =
-                server.signIn !== undefined && !server.signIn.signedIn}
-              <span class={{ "signed-out": state !== "ready" }}
-                >{REGISTRATION_LABELS[state]}</span
+            {#if state !== "missing"}
+              <form
+                method="POST"
+                action="?/unregister"
+                use:enhance={change("unregister", server.name)}
               >
-              {#if state !== "ready"}
-                <form
-                  method="POST"
-                  action="?/register"
-                  use:enhance={change(server.name)}
+                <input type="hidden" name="server" value={server.name} />
+                <button
+                  type="submit"
+                  disabled={changing !== undefined}
+                  title="Sandboxes that loaded it lose its tools"
+                  >{changing === `unregister:${server.name}`
+                    ? "Unregistering…"
+                    : "Unregister"}</button
                 >
-                  <input type="hidden" name="server" value={server.name} />
-                  <button
-                    type="submit"
-                    class="primary"
-                    disabled={changing !== undefined || needsSignIn}
-                    title={needsSignIn
-                      ? "Sign in first: sbx connects to the server when it registers it"
-                      : `sbx mcp add ${server.name}, for every sandbox to load`}
-                    >{changing === server.name
-                      ? "Registering…"
-                      : state === "missing"
-                        ? "Register"
-                        : "Register again"}</button
-                  >
-                </form>
-              {/if}
-              {#if state !== "missing"}
-                <form
-                  method="POST"
-                  action="?/unregister"
-                  use:enhance={change(server.name)}
-                >
-                  <input type="hidden" name="server" value={server.name} />
-                  <button
-                    type="submit"
-                    disabled={changing !== undefined}
-                    title="Sandboxes that loaded it lose its tools"
-                    >Unregister</button
-                  >
-                </form>
-              {/if}
-              {#if detail !== undefined}
-                <p class="hint detail">{detail}</p>
-              {/if}
+              </form>
             {/if}
-          </td>
-          <td>
-            <ul class="tools">
-              {#each server.allow as tool (tool)}
-                <li title="From the config"><code>{tool}</code></li>
-              {/each}
-              {#each server.always.filter((tool) => !server.allow.includes(tool)) as tool (tool)}
-                <li>
+            {#if detail !== undefined}
+              <p class="hint detail">{detail}</p>
+            {/if}
+          {/if}
+        </dd>
+
+        <dt>Endpoint</dt>
+        <dd><code>{data.origin}/mcp/{server.name}</code></dd>
+
+        <dt>Hold</dt>
+        <dd>{formatHold(server.holdSeconds)}</dd>
+      </dl>
+
+      <h4>Tools</h4>
+      {#if server.tools.length === 0}
+        <p class="hint">
+          {server.check?.tools === 0
+            ? "The server lists no tools."
+            : "None known: a successful check lists them. Until a tool is allowed, every call to it asks."}
+        </p>
+      {:else}
+        <ul class="tools">
+          {#each server.tools as tool (tool.name)}
+            <li>
+              <div class="tool-name">
+                <code>{tool.name}</code>
+                {#if tool.readOnly}
+                  <span
+                    class="badge"
+                    title="The server says this tool changes nothing. That's its claim, not a guarantee."
+                    >read-only</span
+                  >
+                {/if}
+                {#if !tool.listed}
+                  <span class="hint">not listed by the server</span>
+                {/if}
+              </div>
+              <div class="tool-allowed">
+                {#if tool.allowed === "config"}
+                  <span class="allowed">Allowed by the config</span>
+                {:else if tool.allowed === "always"}
                   <form method="POST" action="?/disallow" use:enhance>
                     <input type="hidden" name="server" value={server.name} />
-                    <input type="hidden" name="tool" value={tool} />
-                    <code>{tool}</code>
-                    <button
-                      type="submit"
-                      class="remove"
-                      aria-label={`Stop allowing ${tool}`}
-                      title="Stop allowing it without asking">×</button
+                    <input type="hidden" name="tool" value={tool.name} />
+                    <span class="allowed">Allowed</span>
+                    <button type="submit" title="Ask about every call again"
+                      >Ask</button
                     >
                   </form>
-                </li>
-              {/each}
-              {#if server.allow.length === 0 && server.always.length === 0}
-                <li class="hint">Nothing: every call asks.</li>
+                {:else}
+                  <form method="POST" action="?/allow" use:enhance>
+                    <input type="hidden" name="server" value={server.name} />
+                    <input type="hidden" name="tool" value={tool.name} />
+                    <span class="hint">Asks</span>
+                    <button
+                      type="submit"
+                      title="Let every sandbox's calls to it through without asking"
+                      >Allow</button
+                    >
+                  </form>
+                {/if}
+              </div>
+              {#if tool.description !== undefined}
+                <p class="hint description" title={tool.description}>
+                  {tool.description}
+                </p>
               {/if}
-            </ul>
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/each}
 {/if}
 
 <h2>Recent calls</h2>
@@ -367,36 +434,72 @@
     overflow-wrap: anywhere;
   }
 
-  /* The server the Panel passes calls on to, under its name. */
+  .server {
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    padding: 0.75rem 1rem;
+  }
+
+  .server header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 0.75rem;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  h4 {
+    margin: 0.9rem 0 0.4rem;
+    font-size: 0.9rem;
+  }
+
+  /* The server the Panel passes calls on to, next to its name. */
   .upstream {
-    display: block;
     color: var(--muted);
     font-size: 0.85rem;
+    overflow-wrap: anywhere;
   }
 
-  .sign-in {
-    white-space: nowrap;
+  dl {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+    gap: 0.35rem 0.75rem;
+    margin: 0.6rem 0 0;
   }
 
-  .sign-in form,
-  .registration form {
+  dt {
+    color: var(--muted);
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  dd form,
+  .tool-allowed form {
     display: inline;
     margin-left: 0.4rem;
   }
 
-  .sign-in button,
-  .registration button {
+  dd button,
+  .tools button {
     padding: 0.1rem 0.6rem;
     font-size: 0.85rem;
   }
 
-  .signed-out {
+  .bad {
     color: var(--warning-text);
   }
 
   .detail {
     margin: 0.25rem 0 0;
-    max-width: 24rem;
     font-size: 0.85rem;
   }
 
@@ -406,28 +509,49 @@
   }
 
   .tools {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.75rem;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
-  .tools form {
-    display: inline;
+  .tools li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0 1rem;
+    border-top: 1px solid var(--border);
+    padding: 0.35rem 0;
   }
 
-  .remove {
-    border: none;
-    background: none;
-    padding: 0 0.25rem;
+  .tool-allowed {
+    white-space: nowrap;
+  }
+
+  .tool-allowed form {
+    margin-left: 0;
+  }
+
+  .allowed {
+    color: var(--accent);
+  }
+
+  .badge {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 0.3rem;
     color: var(--muted);
-    line-height: 1;
+    font-size: 0.75rem;
   }
 
-  .remove:hover {
-    color: var(--error-text);
+  /* Some servers write a page per tool: two lines here, all of it on hover. */
+  .description {
+    display: -webkit-box;
+    grid-column: 1 / -1;
+    margin: 0.15rem 0 0;
+    overflow: hidden;
+    font-size: 0.85rem;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
   .when {

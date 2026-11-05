@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { argumentFields, argumentsSummary, formatHold } from "./mcp.ts";
+import {
+  argumentFields,
+  argumentsSummary,
+  formatHold,
+  toolRows,
+} from "./mcp.ts";
 
 describe(argumentFields, () => {
   it("shows text as written, and everything else as JSON", () => {
@@ -41,5 +46,30 @@ describe(formatHold, () => {
     [90, "90 s"],
   ])("shows %i seconds as %s", (seconds, text) => {
     expect(formatHold(seconds)).toBe(text);
+  });
+});
+
+describe(toolRows, () => {
+  it("lists the server's tools, then the allowed ones it didn't list", () => {
+    const listed = [
+      { description: "Reads.", name: "get_issue", readOnly: true },
+      { description: undefined, name: "create_note", readOnly: false },
+      { description: undefined, name: "list_issues", readOnly: true },
+    ];
+    expect(
+      toolRows(listed, ["get_issue", "old_tool"], ["list_issues", "old_tool"])
+    ).toStrictEqual([
+      { ...listed[0], allowed: "config", listed: true },
+      { ...listed[1], allowed: undefined, listed: true },
+      { ...listed[2], allowed: "always", listed: true },
+      {
+        allowed: "config",
+        description: undefined,
+        listed: false,
+        name: "old_tool",
+        readOnly: false,
+      },
+    ]);
+    expect(toolRows([], [], [])).toStrictEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
 
 import { MCP } from "#lib/dependencies.ts";
+import { toolRows } from "#lib/mcp.ts";
 import {
   attempt,
   field,
@@ -27,22 +28,33 @@ const shownUrl = (url: string) => {
 export const load: PageServerLoad = async ({ depends }) => {
   depends(MCP);
   const { config, mcp } = getPanelContext();
-  const { approvals, audit, oauth, registrations, servers, store } = mcp;
+  const { approvals, audit, health, oauth, registrations, servers, store } =
+    mcp;
   // Never the servers' headers: they hold the credentials.
   const described = await orUserError(
     async () =>
       await Promise.all(
-        servers.map(async (server) => ({
-          allow: server.allow,
-          always: await store.allowed(server.name),
-          holdSeconds: server.holdMs / 1000,
-          name: server.name,
-          signIn:
-            server.oauth === undefined
-              ? undefined
-              : await oauth.status(server.name),
-          url: shownUrl(server.url),
-        }))
+        servers.map(async (server) => {
+          const { check, lastError } = health.status(server.name);
+          const always = await store.allowed(server.name);
+          return {
+            // Without its tools, which are listed apart.
+            check: check && {
+              at: check.at,
+              reason: check.ok ? undefined : check.reason,
+              tools: check.ok ? check.tools.length : undefined,
+            },
+            holdSeconds: server.holdMs / 1000,
+            lastError,
+            name: server.name,
+            signIn:
+              server.oauth === undefined
+                ? undefined
+                : await oauth.status(server.name),
+            tools: toolRows(check?.ok ? check.tools : [], server.allow, always),
+            url: shownUrl(server.url),
+          };
+        })
       )
   );
   const recent = await orUserError(() => audit.recent(AUDIT_LIMIT));
@@ -65,6 +77,31 @@ export const load: PageServerLoad = async ({ depends }) => {
 };
 
 export const actions: Actions = {
+  allow: async ({ request }) => {
+    const form = await request.formData();
+    const server = field(form, "server");
+    const tool = field(form, "tool");
+    if (server === undefined || tool === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    const { servers, store } = getPanelContext().mcp;
+    if (!servers.some(({ name }) => name === server)) {
+      return fail(404, { message: `There is no MCP server named ${server}.` });
+    }
+    const result = await attempt(() => store.allow(server, tool));
+    return result.ok ? { allowed: tool } : result.failure;
+  },
+
+  check: async ({ request }) => {
+    const server = field(await request.formData(), "server");
+    const { health, servers } = getPanelContext().mcp;
+    if (server === undefined || !servers.some(({ name }) => name === server)) {
+      return fail(400, INCOMPLETE);
+    }
+    await health.check(server);
+    return { checked: server };
+  },
+
   decide: async ({ request }) => {
     const form = await request.formData();
     const id = field(form, "id");

@@ -4,8 +4,11 @@ import type { ReadableStream } from "node:stream/web";
 
 import type { Approvals, Outcome } from "./approvals.ts";
 import type { Audit, AuditEntry } from "./audit.ts";
+import { reasonOf } from "./health.ts";
+import type { McpHealth } from "./health.ts";
 import type { OAuth } from "./oauth.ts";
 import type { McpStore } from "./store.ts";
+import { createUpstream, failureOf, SignedOutError } from "./upstream.ts";
 
 // The MCP approval proxy: one endpoint per server, at `/mcp/<server>`, shared
 // by every sandbox the server is loaded into, passing everything through to
@@ -30,6 +33,8 @@ export interface McpServer {
 export interface McpProxyOptions {
   approvals: Approvals;
   audit: Audit;
+  /** Told of every error a server gives, for the approvals page. */
+  health?: Pick<McpHealth, "noteError">;
   log: (message: string) => void;
   oauth?: Pick<OAuth, "accessToken" | "refresh" | "signOut">;
   servers: readonly McpServer[];
@@ -99,11 +104,6 @@ const sendToolError = (res: ServerResponse, id: unknown, text: string) => {
   });
 };
 
-/** The server needs a sign-in the Panel doesn't have. */
-class SignedOutError extends Error {
-  override name = "SignedOutError";
-}
-
 const signedOutText = (server: string) =>
   `Makak Panel is not signed in to the ${server} MCP server. Ask the user to sign in on the Panel's MCP approvals page, then try again.`;
 
@@ -149,6 +149,7 @@ export const createMcpProxy = ({
   approvals,
   audit,
   fetch: fetchUpstream = fetch,
+  health,
   log,
   now = Date.now,
   oauth,
@@ -156,6 +157,13 @@ export const createMcpProxy = ({
   store,
 }: McpProxyOptions): McpProxy => {
   const byName = new Map(servers.map((server) => [server.name, server]));
+  const upstream = createUpstream({ fetch: fetchUpstream, oauth });
+
+  /** Logs a server's error, and keeps it for the approvals page. */
+  const failed = (server: string, message: string) => {
+    log(`${server}: ${message}`);
+    health?.noteError(server, message);
+  };
 
   /** False when the entry couldn't be written. */
   const record = async (entry: AuditEntry) => {
@@ -207,37 +215,12 @@ export const createMcpProxy = ({
         headers[name] = value;
       }
     }
-    Object.assign(headers, server.headers);
-
-    const send = async (token: string | undefined) => {
-      if (server.oauth !== undefined) {
-        if (token === undefined) {
-          throw new SignedOutError();
-        }
-        headers.authorization = `Bearer ${token}`;
-      }
-      return await fetchUpstream(server.url, {
-        body,
-        headers,
-        method: req.method,
-        // A redirect is passed back, never followed with the server's headers.
-        redirect: "manual",
-        signal,
-      });
-    };
-    const token = await oauth?.accessToken(server.name);
-    let response = await send(token);
-    // A token the server refuses may only need refreshing; once.
-    if (response.status === 401 && server.oauth !== undefined) {
-      await response.body?.cancel();
-      response = await send(await oauth?.refresh(server.name, token));
-      if (response.status === 401) {
-        // Refused even fresh: the sign-in is no good, and the page says so.
-        await response.body?.cancel();
-        await oauth?.signOut(server.name);
-        throw new SignedOutError();
-      }
-    }
+    const response = await upstream(server, {
+      body,
+      headers,
+      method: req.method ?? "GET",
+      signal,
+    });
     const passed: Record<string, string> = {};
     for (const name of RESPONSE_HEADERS) {
       const value = response.headers.get(name);
@@ -251,6 +234,10 @@ export const createMcpProxy = ({
       const text = await response.text();
       log(
         `${server.name} answered a ${req.method} with HTTP ${response.status}: ${text.slice(0, MAX_LOGGED_BODY).trim() || "(no body)"}`
+      );
+      health?.noteError(
+        server.name,
+        `HTTP ${response.status}: ${reasonOf(text)}`
       );
       res.writeHead(response.status, passed);
       res.end(text);
@@ -355,7 +342,7 @@ export const createMcpProxy = ({
           sendToolError(res, message.id, signedOutText(server.name));
           return;
         }
-        log(`MCP server ${server.name} failed: ${(error as Error).message}`);
+        failed(server.name, `Can't be reached: ${failureOf(error)}`);
         sendToolError(
           res,
           message.id,
@@ -446,7 +433,7 @@ export const createMcpProxy = ({
         sendError(res, 503, signedOutText(server.name));
         return;
       }
-      log(`MCP request to ${server.name} failed: ${(error as Error).message}`);
+      failed(server.name, `Can't be reached: ${failureOf(error)}`);
       if (res.headersSent) {
         res.destroy();
       } else {

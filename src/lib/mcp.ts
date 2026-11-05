@@ -49,3 +49,53 @@ export const formatHold = (seconds: number): string => {
   }
   return `${seconds} s`;
 };
+
+/** A tool as the servers list shows it. */
+export interface ToolRow {
+  /** Who lets it run without asking: the config, _Always allow_, or nobody. */
+  allowed: "always" | "config" | undefined;
+  description: string | undefined;
+  /** Whether the server's last check listed it. */
+  listed: boolean;
+  name: string;
+  readOnly: boolean;
+}
+
+/**
+ * The server's tools as its last check listed them, then the allowed ones it
+ * didn't list, such as a renamed tool, or all of them before any check.
+ */
+export const toolRows = (
+  listed: readonly {
+    description: string | undefined;
+    name: string;
+    readOnly: boolean;
+  }[],
+  allow: readonly string[],
+  always: readonly string[]
+): ToolRow[] => {
+  const allowedBy = (name: string) => {
+    if (allow.includes(name)) {
+      return "config" as const;
+    }
+    return always.includes(name) ? ("always" as const) : undefined;
+  };
+  const names = new Set(listed.map(({ name }) => name));
+  const unlisted = [...new Set([...allow, ...always])].filter(
+    (name) => !names.has(name)
+  );
+  return [
+    ...listed.map((tool) => ({
+      ...tool,
+      allowed: allowedBy(tool.name),
+      listed: true,
+    })),
+    ...unlisted.map((name) => ({
+      allowed: allowedBy(name),
+      description: undefined,
+      listed: false,
+      name,
+      readOnly: false,
+    })),
+  ];
+};

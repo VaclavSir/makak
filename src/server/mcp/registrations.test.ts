@@ -120,6 +120,35 @@ describe(createMcpRegistrations, () => {
     ]);
   });
 
+  it("explains sbx's failure with what the server answered meanwhile", async () => {
+    let clock = 1000;
+    const errors: { at: number; message: string }[] = [
+      { at: 999, message: "too early" },
+    ];
+    recorded.state.fail = "mcpAdd";
+    const explained = createMcpRegistrations({
+      health: {
+        errorSince: (_server, since) => {
+          const error = errors.findLast((each) => each.at >= since);
+          return error && { at: String(error.at), message: error.message };
+        },
+      },
+      now: () => clock,
+      oauth: { status: () => Promise.resolve({ signedIn }) },
+      origin: ORIGIN,
+      sbx: recorded.sbx,
+      servers: [{ name: "linear" }],
+      store,
+    });
+
+    await expect(explained.register("linear")).rejects.toThrow("mcpAdd failed");
+    clock = 2000;
+    errors.push({ at: 2000, message: "HTTP 403: not enabled" });
+    await expect(explained.register("linear")).rejects.toThrow(
+      "sbx couldn't register linear: connecting to it, the server answered HTTP 403: not enabled"
+    );
+  });
+
   it("registers no server nobody signed in to, or that isn't configured", async () => {
     signedIn = false;
     await expect(registrations().register("gitlab")).rejects.toThrow(
