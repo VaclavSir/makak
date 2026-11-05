@@ -11,7 +11,6 @@ export const DECIDED_TTL_MS = 24 * 60 * 60_000;
 
 export interface Call {
   arguments: unknown;
-  sandbox: { id: string; name: string };
   server: string;
   tool: string;
 }
@@ -66,8 +65,8 @@ const canonical = (value: unknown): string =>
       : nested
   ) ?? "undefined";
 
-const keyOf = ({ arguments: args, sandbox, server, tool }: Call) =>
-  JSON.stringify([server, sandbox.id, tool, canonical(args)]);
+const keyOf = ({ arguments: args, server, tool }: Call) =>
+  JSON.stringify([server, tool, canonical(args)]);
 
 export const createApprovals = ({
   decidedTtlMs = DECIDED_TTL_MS,
@@ -162,7 +161,6 @@ export const createApprovals = ({
           arguments: entry.arguments,
           id: entry.id,
           requestedAt: entry.requestedAt.toISOString(),
-          sandbox: entry.sandbox,
           server: entry.server,
           tool: entry.tool,
           waiting: entry.waiters.size > 0,

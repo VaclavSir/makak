@@ -1,7 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import type { SubmitFunction } from "$app/forms";
-  import { resolve } from "$app/paths";
   import McpArguments from "#lib/components/mcp-arguments.svelte";
   import { formatTime } from "#lib/format.ts";
   import { argumentsSummary, formatHold, OUTCOME_LABELS } from "#lib/mcp.ts";
@@ -10,8 +9,6 @@
   let { data, form }: PageProps = $props();
 
   let busy = $state<string | undefined>();
-
-  const sandboxPage = (name: string) => resolve("/sandboxes/[name]", { name });
 
   // Signing in leaves the Panel for the server's own page. Through fetch, like
   // every form here: a plain form post would carry no Origin, as the Panel
@@ -50,8 +47,6 @@
         <div class="summary">
           <code class="tool">{request.tool}</code>
           on <strong>{request.server}</strong>
-          from
-          <a href={sandboxPage(request.sandbox.name)}>{request.sandbox.name}</a>
           <span class="hint">
             · {formatTime(request.requestedAt)} · request {request.id}
           </span>
@@ -123,8 +118,11 @@
     <tbody>
       {#each data.servers as server (server.name)}
         <tr>
-          <td><strong>{server.name}</strong></td>
-          <td><code>{data.origin}/mcp/{server.name}/&lt;sandbox&gt;</code></td>
+          <td>
+            <strong>{server.name}</strong>
+            <code class="upstream">{server.url}</code>
+          </td>
+          <td><code>{data.origin}/mcp/{server.name}</code></td>
           <td>{formatHold(server.holdSeconds)}</td>
           <td class="sign-in">
             {#if server.signIn === undefined}
@@ -203,8 +201,7 @@
           <td class="call">
             <details>
               <summary
-                >{entry.sandbox.name} →
-                <code>{entry.server} · {entry.tool}</code>
+                ><code>{entry.server} · {entry.tool}</code>
                 <span class="hint">{argumentsSummary(entry.arguments)}</span
                 ></summary
               >
@@ -287,6 +284,13 @@
 
   td code {
     overflow-wrap: anywhere;
+  }
+
+  /* The server the Panel passes calls on to, under its name. */
+  .upstream {
+    display: block;
+    color: var(--muted);
+    font-size: 0.85rem;
   }
 
   .sign-in {

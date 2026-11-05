@@ -7,7 +7,6 @@ import type { Call } from "./approvals.ts";
 
 const CALL: Call = {
   arguments: { body: "Looks good", iid: 7 },
-  sandbox: { id: "id-a", name: "feature-a" },
   server: "gitlab",
   tool: "create_note",
 };
@@ -83,13 +82,10 @@ describe(createApprovals, () => {
     });
   });
 
-  it("tells calls apart by sandbox, tool and arguments", async () => {
+  it("tells calls apart by server, tool and arguments", async () => {
     const approvals = createApprovals();
     await approvals.ask(CALL, SHORT);
-    await approvals.ask(
-      { ...CALL, sandbox: { id: "id-b", name: "feature-a" } },
-      SHORT
-    );
+    await approvals.ask({ ...CALL, server: "linear" }, SHORT);
     await approvals.ask({ ...CALL, tool: "delete_note" }, SHORT);
     await approvals.ask({ ...CALL, arguments: { iid: 8 } }, SHORT);
     expect(approvals.pending()).toHaveLength(4);

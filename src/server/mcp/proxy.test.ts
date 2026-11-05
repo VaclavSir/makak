@@ -19,9 +19,6 @@ import type { McpServer } from "./proxy.ts";
 import { createMcpStore } from "./store.ts";
 import type { McpStore } from "./store.ts";
 
-const A = { id: "id-a", name: "feature-a" };
-const B = { id: "id-b", name: "feature-b" };
-
 interface Received {
   body: unknown;
   headers: IncomingHttpHeaders;
@@ -108,21 +105,20 @@ describe(createMcpProxy, () => {
   let logged: string[];
   let proxyServer: Server;
   let received: Received[];
-  let sandboxes: Map<string, string>;
   let store: McpStore;
-  let tokenA: string;
+  let token: string;
   let up: Server;
 
   const post = async (
     body: unknown,
     {
-      endpoint = "gitlab/feature-a",
+      endpoint = "gitlab",
       headers = {},
-      token = tokenA,
+      bearer = token,
     }: {
       endpoint?: string;
       headers?: Record<string, string>;
-      token?: string | null;
+      bearer?: string | null;
     } = {}
   ) =>
     await fetch(`${base}/mcp/${endpoint}`, {
@@ -130,7 +126,7 @@ describe(createMcpProxy, () => {
       headers: {
         Accept: "application/json, text/event-stream",
         "Content-Type": "application/json",
-        ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+        ...(bearer === null ? {} : { Authorization: `Bearer ${bearer}` }),
         ...headers,
       },
       method: "POST",
@@ -141,11 +137,11 @@ describe(createMcpProxy, () => {
     return response.status;
   };
 
-  /** A call from feature-a to the proxy at `url`. */
+  /** A call to the proxy at `url`. */
   const callAt = async (url: string, call: unknown) =>
-    await fetch(`${url}/mcp/gitlab/feature-a`, {
+    await fetch(`${url}/mcp/gitlab`, {
       body: JSON.stringify(call),
-      headers: { Authorization: `Bearer ${tokenA}` },
+      headers: { Authorization: `Bearer ${token}` },
       method: "POST",
     });
 
@@ -170,21 +166,10 @@ describe(createMcpProxy, () => {
     audit = createAudit(dir);
     approvals = createApprovals();
     logged = [];
-    sandboxes = new Map([
-      [A.name, A.id],
-      [B.name, B.id],
-    ]);
-    tokenA = await store.register("gitlab", A);
+    token = await store.issue("gitlab");
     const proxy = createMcpProxy({
       approvals,
       audit,
-      findSandbox: (name) => {
-        if (name === "broken") {
-          return Promise.reject(new Error("sbx is down"));
-        }
-        const id = sandboxes.get(name);
-        return Promise.resolve(id === undefined ? undefined : { id });
-      },
       log: (message) => logged.push(message),
       servers: config(upstreamUrl),
       store,
@@ -205,56 +190,39 @@ describe(createMcpProxy, () => {
 
   describe("identity", () => {
     it("refuses a missing or unknown token", async () => {
-      const missing = await post(toolCall("get_issue"), { token: null });
+      const missing = await post(toolCall("get_issue"), { bearer: null });
       expect(missing.status).toBe(401);
       expect(missing.headers.get("www-authenticate")).toBe("Bearer");
       await expect(
-        statusOf(toolCall("get_issue"), { token: "forged" })
+        statusOf(toolCall("get_issue"), { bearer: "forged" })
       ).resolves.toBe(401);
       expect(received).toStrictEqual([]);
       expect(logged).toStrictEqual([
-        "Refused MCP request to gitlab/feature-a: no token",
-        "Refused MCP request to gitlab/feature-a: unknown token",
+        "Refused MCP request to gitlab: no token",
+        "Refused MCP request to gitlab: unknown token",
       ]);
     });
 
-    it("refuses a token on another sandbox's or another server's endpoint", async () => {
-      await store.register("gitlab", B);
-      for (const endpoint of ["gitlab/feature-b", "linear/feature-a"]) {
-        // oxlint-disable-next-line no-await-in-loop -- one at a time
-        const response = await post(toolCall("get_issue"), { endpoint });
-        expect(response.status).toBe(403);
-      }
+    it("refuses one server's token on another server's endpoint", async () => {
+      await store.issue("linear");
+      await expect(
+        statusOf(toolCall("get_issue"), { endpoint: "linear" })
+      ).resolves.toBe(403);
       expect(received).toStrictEqual([]);
-      expect(logged.join("\n")).toContain("with the token of gitlab/feature-a");
+      expect(logged).toStrictEqual([
+        "Refused MCP request to linear with the token of gitlab",
+      ]);
     });
 
-    it("refuses the token of a removed sandbox whose name was reused", async () => {
-      sandboxes.set(A.name, "id-new");
-      await expect(statusOf(toolCall("get_issue"))).resolves.toBe(403);
-      sandboxes.delete(A.name);
-      await expect(statusOf(toolCall("get_issue"))).resolves.toBe(403);
-      expect(received).toStrictEqual([]);
-    });
-
-    it("refuses when it can't tell whether the sandbox still exists", async () => {
-      const token = await store.register("gitlab", { id: "x", name: "broken" });
-      const response = await post(toolCall("get_issue"), {
-        endpoint: "gitlab/broken",
-        token,
-      });
-      expect(response.status).toBe(503);
-      expect(received).toStrictEqual([]);
-    });
-
-    it("names the token's sandbox, whatever the call claims", async () => {
-      const call = post(toolCall("create_note", { sandbox: "feature-b" }));
-      await expect(nextPending()).resolves.toMatchObject({
-        sandbox: { id: "id-a", name: "feature-a" },
-      });
-      const pending = await nextPending();
-      approvals.decide(pending.id, "denied");
-      await call;
+    it("takes a replaced or revoked token no more", async () => {
+      const old = token;
+      token = await store.issue("gitlab");
+      await expect(
+        statusOf(toolCall("get_issue"), { bearer: old })
+      ).resolves.toBe(401);
+      await expect(statusOf(toolCall("get_issue"))).resolves.toBe(200);
+      await store.revoke("gitlab");
+      await expect(statusOf(toolCall("get_issue"))).resolves.toBe(401);
     });
   });
 
@@ -272,7 +240,7 @@ describe(createMcpProxy, () => {
       });
     });
 
-    it("sends the server's credentials, never the sandbox's", async () => {
+    it("sends the server's credentials, never the gateway's", async () => {
       await post(toolCall("get_issue"), {
         headers: { "Mcp-Session-Id": "session-1" },
       });
@@ -288,7 +256,6 @@ describe(createMcpProxy, () => {
       await expect(audit.recent(1)).resolves.toMatchObject([
         {
           outcome: "allowed",
-          sandbox: A,
           server: "gitlab",
           tool: "get_issue",
         },
@@ -305,8 +272,8 @@ describe(createMcpProxy, () => {
       await expect(statusOf(initialize)).resolves.toBe(200);
       const batch = [{ id: 1, jsonrpc: "2.0", method: "ping" }];
       await expect(statusOf(batch)).resolves.toBe(200);
-      const stream = await fetch(`${base}/mcp/gitlab/feature-a`, {
-        headers: { Authorization: `Bearer ${tokenA}` },
+      const stream = await fetch(`${base}/mcp/gitlab`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
       expect(stream.status).toBe(200);
       expect(received.map(({ method }) => method)).toStrictEqual([
@@ -324,7 +291,6 @@ describe(createMcpProxy, () => {
           recent: () => Promise.resolve([]),
           record: () => Promise.reject(new Error("disk full")),
         },
-        findSandbox: () => Promise.resolve({ id: A.id }),
         log: (message) => logged.push(message),
         servers: config(`${base}/unused`),
         store,
@@ -333,9 +299,9 @@ describe(createMcpProxy, () => {
         proxy.handle(req, res, new URL(req.url ?? "/", "http://panel.test"));
       });
       const url = await listen(server);
-      const response = await fetch(`${url}/mcp/gitlab/feature-a`, {
+      const response = await fetch(`${url}/mcp/gitlab`, {
         body: JSON.stringify(toolCall("get_issue")),
-        headers: { Authorization: `Bearer ${tokenA}` },
+        headers: { Authorization: `Bearer ${token}` },
         method: "POST",
       });
       server.close();
@@ -411,7 +377,6 @@ describe(createMcpProxy, () => {
       const proxy = createMcpProxy({
         approvals,
         audit,
-        findSandbox: () => Promise.resolve({ id: A.id }),
         log: (message) => logged.push(message),
         oauth: {
           accessToken: () =>
@@ -595,13 +560,16 @@ describe(createMcpProxy, () => {
 
   it("refuses unknown servers, other methods and bodies that aren't JSON", async () => {
     await expect(
-      statusOf(toolCall("get_issue"), { endpoint: "jira/feature-a" })
+      statusOf(toolCall("get_issue"), { endpoint: "jira" })
     ).resolves.toBe(404);
-    await expect(
-      statusOf(toolCall("get_issue"), { endpoint: "gitlab" })
-    ).resolves.toBe(404);
+    // The per-sandbox endpoints of earlier versions are gone.
+    for (const endpoint of ["gitlab/feature-a", "gitlab/", ""]) {
+      // oxlint-disable-next-line no-await-in-loop -- one at a time
+      const status = await statusOf(toolCall("get_issue"), { endpoint });
+      expect(status).toBe(404);
+    }
     await expect(statusOf("{nope")).resolves.toBe(400);
-    const put = await fetch(`${base}/mcp/gitlab/feature-a`, { method: "PUT" });
+    const put = await fetch(`${base}/mcp/gitlab`, { method: "PUT" });
     expect(put.status).toBe(405);
     expect(received).toStrictEqual([]);
   });

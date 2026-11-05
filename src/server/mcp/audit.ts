@@ -22,7 +22,6 @@ const entrySchema = z.object({
   outcome: z.enum(["allowed", "approved", "denied", "gone", "held"]),
   /** The approval request, for calls that needed one. */
   request: z.string().optional(),
-  sandbox: z.object({ id: z.string(), name: z.string() }),
   server: z.string(),
   tool: z.string(),
 });

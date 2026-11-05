@@ -162,9 +162,9 @@ describe("Panel server", () => {
     it("take requests without a session or an Origin, apart from the app", async () => {
       reached.length = 0;
       reachedMcp.length = 0;
-      const res = await send({ method: "POST", path: "/mcp/gitlab/feature-a" });
+      const res = await send({ method: "POST", path: "/mcp/gitlab" });
       expect(res.body).toBe("mcp");
-      expect(reachedMcp).toStrictEqual(["POST /mcp/gitlab/feature-a"]);
+      expect(reachedMcp).toStrictEqual(["POST /mcp/gitlab"]);
       expect(reached).toStrictEqual([]);
     });
 
@@ -174,14 +174,14 @@ describe("Panel server", () => {
         statusOf({
           method: "POST",
           origin: "https://evil.test",
-          path: "/mcp/gitlab/feature-a",
+          path: "/mcp/gitlab",
         })
       ).resolves.toBe(403);
       await expect(
         statusOf({
           host: "evil.test",
           method: "POST",
-          path: "/mcp/gitlab/feature-a",
+          path: "/mcp/gitlab",
         })
       ).resolves.toBe(421);
       expect(reachedMcp).toStrictEqual([]);

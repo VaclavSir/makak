@@ -5,12 +5,13 @@ import type { ReadableStream } from "node:stream/web";
 import type { Approvals, Outcome } from "./approvals.ts";
 import type { Audit, AuditEntry } from "./audit.ts";
 import type { OAuth } from "./oauth.ts";
-import type { McpStore, Registration } from "./store.ts";
+import type { McpStore } from "./store.ts";
 
-// The MCP approval proxy: one endpoint per (server, sandbox), at
-// `/mcp/<server>/<sandbox>`, passing everything through to the server except
-// tool calls off the allowlist, which wait for the user. The sandbox is the
-// one the bearer token was issued to; the path only has to agree with it.
+// The MCP approval proxy: one endpoint per server, at `/mcp/<server>`, shared
+// by every sandbox the server is loaded into, passing everything through to
+// the server except tool calls off the allowlist, which wait for the user.
+// The sbx MCP gateway passes on no sandbox identity, so the proxy has none:
+// its bearer token says only which server's registration is calling.
 
 /** Reserved for the endpoints: no page of the Panel may live under it. */
 export const MCP_PATH = "/mcp/";
@@ -29,8 +30,6 @@ export interface McpServer {
 export interface McpProxyOptions {
   approvals: Approvals;
   audit: Audit;
-  /** The sandbox now called this, to tell a removed one's token apart. */
-  findSandbox: (name: string) => Promise<{ id: string } | undefined>;
   log: (message: string) => void;
   oauth?: Pick<OAuth, "accessToken" | "refresh" | "signOut">;
   servers: readonly McpServer[];
@@ -45,11 +44,11 @@ export interface McpProxy {
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
-// What passes between the gateway and the server. Not the gateway's
-// Authorization: that is the sandbox's token, for the Panel only.
 /** How much of a server's error answer is logged. */
 const MAX_LOGGED_BODY = 500;
 
+// What passes between the gateway and the server. Not the gateway's
+// Authorization: that is the registration's token, for the Panel only.
 const REQUEST_HEADERS = [
   "accept",
   "content-type",
@@ -122,20 +121,17 @@ const readBody = async (req: IncomingMessage): Promise<string | undefined> => {
   return Buffer.concat(chunks).toString("utf-8");
 };
 
-/** `/mcp/<server>/<sandbox>`, decoded, or undefined for any other path. */
-const endpointOf = (pathname: string) => {
-  const parts = pathname.slice(MCP_PATH.length).split("/");
-  if (parts.length !== 2) {
+/** `/mcp/<server>`, decoded, or undefined for any other path. */
+const serverOf = (pathname: string) => {
+  const part = pathname.slice(MCP_PATH.length);
+  if (part === "" || part.includes("/")) {
     return;
   }
-  let server: string;
-  let sandbox: string;
   try {
-    [server = "", sandbox = ""] = parts.map(decodeURIComponent);
+    return decodeURIComponent(part);
   } catch {
-    return;
+    // A malformed escape: no server has that name.
   }
-  return server === "" || sandbox === "" ? undefined : { sandbox, server };
 };
 
 const bearerOf = (header: string | undefined) => {
@@ -153,7 +149,6 @@ export const createMcpProxy = ({
   approvals,
   audit,
   fetch: fetchUpstream = fetch,
-  findSandbox,
   log,
   now = Date.now,
   oauth,
@@ -173,49 +168,28 @@ export const createMcpProxy = ({
     }
   };
 
-  /** Who is calling, or the response already sent to refuse them. */
-  const identify = async (
+  /** Whether the token is the server's; if not, the refusal is sent. */
+  const authorized = async (
     req: IncomingMessage,
     res: ServerResponse,
-    endpoint: { sandbox: string; server: string }
-  ): Promise<Registration | undefined> => {
+    server: string
+  ) => {
     const token = bearerOf(req.headers.authorization);
-    const registration =
-      token === undefined ? undefined : await store.identify(token);
-    if (registration === undefined) {
+    const owner = token === undefined ? undefined : await store.identify(token);
+    if (owner === undefined) {
       log(
-        `Refused MCP request to ${endpoint.server}/${endpoint.sandbox}: ${token === undefined ? "no" : "unknown"} token`
+        `Refused MCP request to ${server}: ${token === undefined ? "no" : "unknown"} token`
       );
       res.setHeader("WWW-Authenticate", "Bearer");
       sendError(res, 401, "Missing or unknown token");
-      return;
+      return false;
     }
-    if (
-      registration.server !== endpoint.server ||
-      registration.sandbox !== endpoint.sandbox
-    ) {
-      log(
-        `Refused MCP request to ${endpoint.server}/${endpoint.sandbox} with the token of ${registration.server}/${registration.sandbox}`
-      );
-      sendError(res, 403, "This token is for another endpoint");
-      return;
+    if (owner !== server) {
+      log(`Refused MCP request to ${server} with the token of ${owner}`);
+      sendError(res, 403, "This token is for another server");
+      return false;
     }
-    let current: { id: string } | undefined;
-    try {
-      current = await findSandbox(registration.sandbox);
-    } catch (error) {
-      log(`MCP request refused, sbx failed: ${(error as Error).message}`);
-      sendError(res, 503, "The Panel can't list sandboxes right now");
-      return;
-    }
-    if (current?.id !== registration.sandboxId) {
-      log(
-        `Refused MCP request to ${endpoint.server}/${endpoint.sandbox}: the token belongs to a removed sandbox of that name`
-      );
-      sendError(res, 403, "This token belongs to a removed sandbox");
-      return;
-    }
-    return registration;
+    return true;
   };
 
   /** Passes the request on, and the response back. */
@@ -311,12 +285,11 @@ export const createMcpProxy = ({
     context: {
       body: string;
       message: Message;
-      registration: Registration;
       server: McpServer;
       signal: AbortSignal;
     }
   ) => {
-    const { body, message, registration, server, signal } = context;
+    const { body, message, server, signal } = context;
     const params = isRecord(message.params) ? message.params : {};
     const tool = params.name;
     if (typeof tool !== "string") {
@@ -327,7 +300,6 @@ export const createMcpProxy = ({
     const base = {
       arguments: params.arguments,
       at: new Date(started).toISOString(),
-      sandbox: { id: registration.sandboxId, name: registration.sandbox },
       server: server.name,
       tool,
     };
@@ -349,7 +321,6 @@ export const createMcpProxy = ({
       const answer = await approvals.ask(
         {
           arguments: params.arguments,
-          sandbox: base.sandbox,
           server: server.name,
           tool,
         },
@@ -402,7 +373,6 @@ export const createMcpProxy = ({
     req: IncomingMessage,
     res: ServerResponse,
     server: McpServer,
-    registration: Registration,
     signal: AbortSignal
   ) => {
     const text = await readBody(req);
@@ -429,7 +399,6 @@ export const createMcpProxy = ({
       await call(req, res, {
         body,
         message: message as Message,
-        registration,
         server,
         signal,
       });
@@ -443,9 +412,9 @@ export const createMcpProxy = ({
     res: ServerResponse,
     url: URL
   ) => {
-    const endpoint = endpointOf(url.pathname);
-    const server = endpoint && byName.get(endpoint.server);
-    if (endpoint === undefined || server === undefined) {
+    const name = serverOf(url.pathname);
+    const server = name === undefined ? undefined : byName.get(name);
+    if (server === undefined) {
       sendError(res, 404, "No such MCP server");
       return;
     }
@@ -463,12 +432,11 @@ export const createMcpProxy = ({
     });
 
     try {
-      const registration = await identify(req, res, endpoint);
-      if (registration === undefined) {
+      if (!(await authorized(req, res, server.name))) {
         return;
       }
       await (req.method === "POST"
-        ? post(req, res, server, registration, controller.signal)
+        ? post(req, res, server, controller.signal)
         : forward(req, res, server, undefined, controller.signal));
     } catch (error) {
       if (controller.signal.aborted) {

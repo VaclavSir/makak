@@ -117,7 +117,7 @@ sequenceDiagram
 
 If you deny a call instead, the agent gets a refusal and nothing reaches the server.
 
-Every request shows which sandbox is asking and what exactly it wants to send, such as the full text of a comment. You can **allow once**, or **always allow** a tool you trust. The allowlist grows as you go: approvals are frequent at first, and become rare once the read-only tools are confirmed.
+Every request shows what exactly the agent wants to send, such as the full text of a comment. It doesn't show which sandbox is asking: sbx doesn't say, and the content usually does. You can **allow once**, or **always allow** a tool you trust. The allowlist grows as you go: approvals are frequent at first, and become rare once the read-only tools are confirmed.
 
 ## Working across projects
 
@@ -142,7 +142,7 @@ flowchart LR
 4. **Open a merge request.** Ask the agent to prepare one. Its MCP call waits in the Panel until you've read it and approved it.
 5. **Leave a note.** Record in the Panel where the work stands, so you can pick it up later.
 6. **Need a change elsewhere?** Ask the agent for a handoff document, start a sandbox for the other project, copy the document over, and continue there.
-7. **Clean up.** Remove the sandbox when you're done. The Panel makes sure no work is lost, and tidies up its MCP registrations.
+7. **Clean up.** Remove the sandbox when you're done. The Panel makes sure no work is lost.
 
 ## What the Panel will and won't stop you doing
 

@@ -90,7 +90,7 @@ A full example, with the defaults where there are any:
 | `proxy.tls.cert`, `proxy.tls.key` | `~/makak/tls/sandboxes.pem`, `~/makak/tls/sandboxes-key.pem` | Wildcard certificate for every suffix; see [setup](setup.md#reverse-proxy). Read only when there are listeners. |
 | `mcp.holdSeconds` | `240` | How long a tool call off the allowlist waits for your decision before the agent is told to call again; see [holds](#holds). |
 | `mcp.servers` | `[]` | MCP servers sandboxes reach through the Panel's [approval proxy](architecture.md#mcp-proxy). |
-| `mcp.servers[].name` |  | Lower-case letters, digits and underscores. Each sandbox's endpoint is `/mcp/<name>/<sandbox>`. |
+| `mcp.servers[].name` |  | Lower-case letters, digits and underscores. Its endpoint is `/mcp/<name>`, registered with sbx as `<name>`. |
 | `mcp.servers[].url` |  | The server's Streamable HTTP endpoint. |
 | `mcp.servers[].oauth` |  | The Panel signs in to the server with OAuth, once, from the MCP approvals page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
 | `mcp.servers[].headers` | `{}` | Headers the Panel sends to the server, such as a token for servers that don't sign in with OAuth. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Not `Authorization` with `oauth`. |

@@ -16,6 +16,14 @@ const AUDIT_LIMIT = 100;
 
 const DECISIONS = ["allow", "always", "deny"] as const;
 
+/** The wrapped server's URL, without any credentials written into it. */
+const shownUrl = (url: string) => {
+  const shown = new URL(url);
+  shown.username = "";
+  shown.password = "";
+  return shown.href;
+};
+
 export const load: PageServerLoad = async ({ depends }) => {
   depends(MCP);
   const { config, mcp } = getPanelContext();
@@ -33,6 +41,7 @@ export const load: PageServerLoad = async ({ depends }) => {
             server.oauth === undefined
               ? undefined
               : await oauth.status(server.name),
+          url: shownUrl(server.url),
         }))
       )
   );

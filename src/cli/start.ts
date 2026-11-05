@@ -252,14 +252,7 @@ export const start = async (options: StartOptions): Promise<void> => {
     auth,
     hostname,
     log,
-    mcp: createMcpProxy({
-      ...mcp,
-      findSandbox: async (name) => {
-        const list = await sandboxes.recent();
-        return list.find((sandbox) => sandbox.name === name);
-      },
-      log,
-    }),
+    mcp: createMcpProxy({ ...mcp, log }),
     port,
     tls,
   });

@@ -12,7 +12,6 @@ const entry = (tool: string): AuditEntry => ({
   at: "2026-10-25T10:00:00.000Z",
   ms: 3,
   outcome: "allowed",
-  sandbox: { id: "id-a", name: "feature-a" },
   server: "gitlab",
   tool,
 });

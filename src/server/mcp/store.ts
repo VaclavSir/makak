@@ -5,14 +5,11 @@ import * as z from "zod";
 
 import { createJsonFile } from "../json-file.ts";
 
-// What the MCP proxy keeps: a token per (server, sandbox), and the tools
-// allowed with "always allow". In `<stateDir>/mcp.json`.
+// What the MCP proxy keeps: a token per server, which the sbx MCP gateway
+// sends, and the tools allowed with "always allow". In `<stateDir>/mcp.json`.
 
-const registrationSchema = z.object({
+const tokenSchema = z.object({
   createdAt: z.string(),
-  /** The sandbox's name when registered, as in the endpoint's path. */
-  sandbox: z.string().min(1),
-  sandboxId: z.string().min(1),
   server: z.string().min(1),
 });
 
@@ -20,25 +17,15 @@ const fileSchema = z.object({
   /** Per server, on top of the config's `allow`. */
   allowed: z.record(z.string(), z.array(z.string())).default({}),
   /** Keyed by the token's SHA-256. The token itself is never stored. */
-  registrations: z.record(z.string(), registrationSchema).default({}),
+  tokens: z.record(z.string(), tokenSchema).default({}),
 });
 
-export type Registration = z.output<typeof registrationSchema>;
-
 export interface McpStore {
-  /**
-   * A new token for the server and sandbox, replacing any earlier one: a
-   * sandbox has one token per server, so the token alone identifies both.
-   */
-  register: (
-    server: string,
-    sandbox: { id: string; name: string },
-    now?: Date
-  ) => Promise<string>;
-  /** Whose token this is, if anyone's. */
-  identify: (token: string) => Promise<Registration | undefined>;
-  registrations: () => Promise<Registration[]>;
-  unregister: (server: string, sandboxId: string) => Promise<void>;
+  /** A new token for the server, replacing its earlier one. */
+  issue: (server: string, now?: Date) => Promise<string>;
+  /** The server this token was issued for, if any. */
+  identify: (token: string) => Promise<string | undefined>;
+  revoke: (server: string) => Promise<void>;
   /** The tools allowed with "always allow", sorted. */
   allowed: (server: string) => Promise<string[]>;
   allow: (server: string, tool: string) => Promise<void>;
@@ -50,14 +37,11 @@ const digest = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 
 const without = (
-  registrations: Record<string, Registration>,
-  server: string,
-  sandboxId: string
+  tokens: Record<string, z.output<typeof tokenSchema>>,
+  server: string
 ) =>
   Object.fromEntries(
-    Object.entries(registrations).filter(
-      ([, entry]) => entry.server !== server || entry.sandboxId !== sandboxId
-    )
+    Object.entries(tokens).filter(([, entry]) => entry.server !== server)
   );
 
 export const createMcpStore = (stateDir: string): McpStore => {
@@ -81,30 +65,21 @@ export const createMcpStore = (stateDir: string): McpStore => {
       }),
     identify: async (token) => {
       const state = await file.read();
-      return Object.hasOwn(state.registrations, digest(token))
-        ? state.registrations[digest(token)]
+      return Object.hasOwn(state.tokens, digest(token))
+        ? state.tokens[digest(token)]?.server
         : undefined;
     },
-    register: async (server, sandbox, now = new Date()) => {
+    issue: async (server, now = new Date()) => {
       const token = randomBytes(32).toString("base64url");
       await file.update((state) => {
-        state.registrations = without(state.registrations, server, sandbox.id);
-        state.registrations[digest(token)] = {
-          createdAt: now.toISOString(),
-          sandbox: sandbox.name,
-          sandboxId: sandbox.id,
-          server,
-        };
+        state.tokens = without(state.tokens, server);
+        state.tokens[digest(token)] = { createdAt: now.toISOString(), server };
       });
       return token;
     },
-    registrations: async () => {
-      const state = await file.read();
-      return Object.values(state.registrations);
-    },
-    unregister: (server, sandboxId) =>
+    revoke: (server) =>
       file.update((state) => {
-        state.registrations = without(state.registrations, server, sandboxId);
+        state.tokens = without(state.tokens, server);
       }),
   };
 };
