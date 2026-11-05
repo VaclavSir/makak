@@ -57,7 +57,14 @@ A full example, with the defaults where there are any:
       {
         "name": "postgres",
         "command": "docker",
-        "args": ["run", "-i", "--rm", "-e", "DATABASE_URI", "crystaldba/postgres-mcp"],
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "-e",
+          "DATABASE_URI",
+          "crystaldba/postgres-mcp"
+        ],
         "env": { "DATABASE_URI": { "env": "SHOP_DATABASE_URI" } },
         "allow": ["list_schemas", "list_objects"]
       }

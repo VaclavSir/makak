@@ -55,19 +55,33 @@ const MAX_PAGES = 20;
 const CLIENT = { name: "makak-panel", version: "1" };
 const PROTOCOL_VERSION = "2025-06-18";
 
+/** The text in a JSON-RPC error's `data`, which often says more than its message. */
+const detailOf = (data: unknown): string[] => {
+  if (typeof data === "string") {
+    return [data];
+  }
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    return Object.values(data).filter(
+      (value): value is string => typeof value === "string"
+    );
+  }
+  return [];
+};
+
 /** What a server's error answer says, from the usual JSON fields if any. */
 export const reasonOf = (body: string): string => {
   let reason = body.trim();
   try {
     const parsed = JSON.parse(body) as Record<string, unknown>;
+    const rpc = parsed.error as Record<string, unknown> | undefined;
     const field = [
       parsed.error_description,
       parsed.message,
-      (parsed.error as Record<string, unknown> | undefined)?.message,
+      rpc?.message,
       parsed.error,
     ].find((value) => typeof value === "string" && value !== "");
     if (typeof field === "string") {
-      reason = field;
+      reason = [field, ...detailOf(rpc?.data)].join(": ");
     }
   } catch {
     // Not JSON: the text as it is.

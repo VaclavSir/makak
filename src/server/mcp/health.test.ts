@@ -239,6 +239,25 @@ describe(reasonOf, () => {
     expect(reasonOf('{"error":"invalid_token"}')).toBe("invalid_token");
   });
 
+  it("adds what a JSON-RPC error's data says", () => {
+    expect(
+      reasonOf(
+        JSON.stringify({
+          error: {
+            code: -32_602,
+            data: { params: "Unsupported protocol version '2024-11-05'" },
+            message: "Invalid params",
+          },
+          id: 1,
+          jsonrpc: "2.0",
+        })
+      )
+    ).toBe("Invalid params: Unsupported protocol version '2024-11-05'");
+    expect(reasonOf('{"error":{"code":1,"data":"why","message":"nope"}}')).toBe(
+      "nope: why"
+    );
+  });
+
   it("takes the text otherwise", () => {
     expect(reasonOf("  Bad gateway\n")).toBe("Bad gateway");
     expect(reasonOf("")).toBe("no reason given");

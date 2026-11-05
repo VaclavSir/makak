@@ -93,6 +93,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isToolCall = (message: unknown) =>
   isRecord(message) && message.method === "tools/call" && "id" in message;
 
+/** What a request asked, to say which one a server refused. */
+const askedIn = (method: string | undefined, message?: unknown) => {
+  if (method !== "POST") {
+    return method ?? "GET";
+  }
+  const methods = (Array.isArray(message) ? message : [message]).map(
+    (each: unknown) =>
+      isRecord(each) && typeof each.method === "string"
+        ? each.method
+        : "a response"
+  );
+  return methods.join(", ");
+};
+
 const sendJson = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -218,7 +232,8 @@ export const createMcpProxy = ({
     res: ServerResponse,
     server: McpServer,
     body: string | undefined,
-    signal: AbortSignal
+    signal: AbortSignal,
+    asked = askedIn(req.method)
   ): Promise<void> => {
     const headers: Record<string, string> = {};
     for (const name of REQUEST_HEADERS) {
@@ -245,11 +260,11 @@ export const createMcpProxy = ({
       // passed back as it came.
       const text = await response.text();
       log(
-        `${server.name} answered a ${req.method} with HTTP ${response.status}: ${text.slice(0, MAX_LOGGED_BODY).trim() || "(no body)"}`
+        `${server.name} answered ${asked} with HTTP ${response.status}: ${text.slice(0, MAX_LOGGED_BODY).trim() || "(no body)"}`
       );
       health?.noteError(
         server.name,
-        `HTTP ${response.status}: ${reasonOf(text)}`
+        `HTTP ${response.status} to ${asked}: ${reasonOf(text)}`
       );
       res.writeHead(response.status, passed);
       res.end(text);
@@ -345,7 +360,7 @@ export const createMcpProxy = ({
       );
     } else if (outcome === "allowed" || outcome === "approved") {
       try {
-        await forward(req, res, server, body, signal);
+        await forward(req, res, server, body, signal, "tools/call");
       } catch (error) {
         if (signal.aborted || res.headersSent) {
           throw error;
@@ -403,7 +418,7 @@ export const createMcpProxy = ({
       });
       return;
     }
-    await forward(req, res, server, body, signal);
+    await forward(req, res, server, body, signal, askedIn("POST", message));
   };
 
   const handle = async (

@@ -383,9 +383,11 @@ describe(createMcpProxy, () => {
         '{"error":"insufficient_scope"}'
       );
       expect(logged).toStrictEqual([
-        'gitlab answered a POST with HTTP 403: {"error":"insufficient_scope"}',
+        'gitlab answered forbidden with HTTP 403: {"error":"insufficient_scope"}',
       ]);
-      expect(noted).toStrictEqual(["gitlab: HTTP 403: insufficient_scope"]);
+      expect(noted).toStrictEqual([
+        "gitlab: HTTP 403 to forbidden: insufficient_scope",
+      ]);
     });
 
     it("passes a tool always allowed", async () => {
