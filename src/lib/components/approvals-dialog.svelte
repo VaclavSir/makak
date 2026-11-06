@@ -5,7 +5,8 @@
 
   // The approval queue over whatever page is open, so deciding a call never
   // leaves it. Opened through shallow routing, in the history: Back, Esc or
-  // Close shut it, and the page underneath stays as it was.
+  // Close shut it, and the page underneath stays as it was. Deciding the
+  // last waiting call closes it too; opened with none waiting, it stays.
 
   let { pending }: { pending: Approval[] } = $props();
 
@@ -44,7 +45,14 @@
       }}>Close</button
     >
   </div>
-  <McpQueue {pending} />
+  <McpQueue
+    {pending}
+    ondecided={() => {
+      if (pending.length === 0) {
+        dialog.close();
+      }
+    }}
+  />
 </dialog>
 
 <style>

@@ -12,7 +12,14 @@
   // over any page, and on the approvals page, so it posts to that page's
   // action and shows its own failures, whichever page it is on.
 
-  let { pending }: { pending: Approval[] } = $props();
+  let {
+    ondecided,
+    pending,
+  }: {
+    /** Called once a decision went through and the queue was reloaded. */
+    ondecided?: () => void;
+    pending: Approval[];
+  } = $props();
 
   let busy = $state<string | undefined>();
   let message = $state("");
@@ -32,6 +39,9 @@
           message = String(result.error);
         }
         await invalidate(MCP, true);
+        if (result.type === "success") {
+          ondecided?.();
+        }
       };
     };
 </script>
