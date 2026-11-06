@@ -120,7 +120,7 @@ A full example, with the defaults where there are any:
 | `runs.projects[].path` |  | The project, as the sandbox's workspace path on the host. |
 | `runs.projects[].commands` |  | `label` is the button's text; `command` is run with bash in the project's directory. |
 | `ssh.hostSuffix` | `.sbx` | The suffix of the SSH host pattern `sbx setup ssh` wrote (`*.sbx` unless you passed `--alias`). The Panel shows `<sandbox>.sbx` as the SSH host. |
-| `stateDir` | `~/makak/state` | Where the Panel keeps its own data. `sandboxes.json`: each sandbox's notes, the env files and args it was created with, and the MCP servers loaded into it. `mcp.json`: the tools allowed from the MCP servers page, on top of each server's `allow`, and the hashed tokens of the sbx registrations. `oauth.json`: the OAuth clients and tokens of the servers the Panel signs in to. `mcp-audit.jsonl`: every tool call and its outcome, appended only. |
+| `stateDir` | `~/makak/state` | Where the Panel keeps its own data. `sandboxes.json`: each sandbox's notes, the env files and args it was created with, and the MCP servers loaded into it. `mcp.json`: the tools allowed from the MCP servers page, on top of each server's `allow`, and the hashed tokens of the sbx registrations. `oauth.json`: the OAuth clients and tokens of the servers the Panel signs in to. `mcp-audit.jsonl`: every tool call, its outcome and the start of its answer, appended only. |
 
 Handoffs are not implemented yet; the setting is validated now so the file format is stable.
 

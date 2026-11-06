@@ -54,7 +54,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each data.entries as entry, index (index)}
+      {#each data.entries as entry, index (entry.id ?? `before-ids-${index}`)}
         <tr>
           <td class="hint when">{formatTime(entry.at)}</td>
           <td class="call">
@@ -64,11 +64,36 @@
                 <span class="hint">{argumentsSummary(entry.arguments)}</span
                 ></summary
               >
+              <h3>Arguments</h3>
               <McpArguments args={entry.arguments} />
+              <h3>
+                Response
+                {#if entry.response?.by === "panel"}
+                  <span class="hint">from the Panel, not the server</span>
+                {/if}
+              </h3>
+              {#if entry.response === undefined}
+                <p class="hint">
+                  {entry.outcome === "gone"
+                    ? "None: the agent gave up waiting."
+                    : "None recorded."}
+                </p>
+              {:else if entry.response.text === ""}
+                <p class="hint">Empty.</p>
+              {:else}
+                <pre class={{ failed: entry.response.error }}>{entry.response
+                    .text}</pre>
+                {#if entry.response.truncated}
+                  <p class="hint">Only the start of it is kept.</p>
+                {/if}
+              {/if}
             </details>
           </td>
           <td class={["outcome", entry.outcome]}>
             {OUTCOME_LABELS[entry.outcome]}{entry.earlier ? " earlier" : ""}
+            {#if entry.response?.by === "server" && entry.response.error}
+              <span class="failed">· failed</span>
+            {/if}
             {#if entry.request !== undefined}
               <span class="hint">· {entry.request}</span>
             {/if}
@@ -161,6 +186,33 @@
 
   .outcome {
     white-space: nowrap;
+  }
+
+  h3 {
+    margin: 0.75rem 0 0.3rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: normal;
+  }
+
+  details p {
+    margin: 0;
+  }
+
+  pre {
+    max-height: 24rem;
+    margin: 0;
+    overflow: auto;
+    border-radius: 4px;
+    background: var(--bg);
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .failed {
+    color: var(--error-text);
   }
 
   .outcome.denied {

@@ -271,6 +271,24 @@ describe(createMcpProxy, () => {
       ]);
     });
 
+    it("keeps the server's answer with the call", async () => {
+      const response = await post(toolCall("get_issue"));
+      await response.text();
+      await expect
+        .poll(async () => await audit.recent(1))
+        .toMatchObject([
+          {
+            response: {
+              by: "server",
+              error: false,
+              text: "upstream",
+              truncated: false,
+            },
+            tool: "get_issue",
+          },
+        ]);
+    });
+
     it("passes everything but tool calls, unaudited", async () => {
       const initialize = {
         id: 0,
@@ -299,6 +317,7 @@ describe(createMcpProxy, () => {
         audit: {
           recent: () => Promise.resolve([]),
           record: () => Promise.reject(new Error("disk full")),
+          respond: () => Promise.reject(new Error("disk full")),
         },
         log: (message) => logged.push(message),
         servers: config(`${base}/unused`),
@@ -571,9 +590,18 @@ describe(createMcpProxy, () => {
         text: "The user denied this call to create_note in Makak Panel.",
       });
       expect(received).toStrictEqual([]);
-      await expect(audit.recent(1)).resolves.toMatchObject([
-        { outcome: "denied" },
-      ]);
+      await expect
+        .poll(async () => await audit.recent(1))
+        .toMatchObject([
+          {
+            outcome: "denied",
+            response: {
+              by: "panel",
+              error: true,
+              text: "The user denied this call to create_note in Makak Panel.",
+            },
+          },
+        ]);
     });
 
     it("tells the agent to ask again when nobody decides in time", async () => {

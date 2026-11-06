@@ -96,7 +96,7 @@ export const reasonOf = (body: string): string => {
 export const messageFor = (
   body: string,
   contentType: string | null,
-  id: number
+  id: unknown
 ): Record<string, unknown> | undefined => {
   const texts = contentType?.startsWith("text/event-stream")
     ? body.split(/\r?\n\r?\n/u).map((event) =>

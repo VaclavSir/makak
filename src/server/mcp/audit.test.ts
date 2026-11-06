@@ -56,4 +56,29 @@ describe(createAudit, () => {
     expect(recent.map(({ tool }) => tool)).toStrictEqual(["c", "a"]);
     await expect(audit.recent(1, "github")).resolves.toHaveLength(1);
   });
+
+  it("adds each call's response, written after it", async () => {
+    const audit = createAudit(dir);
+    await audit.record({ ...entry("a"), id: "1" });
+    await audit.record({ ...entry("b"), id: "2" });
+    await audit.respond({
+      at: "2026-10-25T10:00:01.000Z",
+      by: "server",
+      call: "1",
+      error: false,
+      text: "done",
+      truncated: false,
+    });
+
+    const [b, a] = await audit.recent(10);
+    expect(a?.response).toStrictEqual({
+      at: "2026-10-25T10:00:01.000Z",
+      by: "server",
+      error: false,
+      text: "done",
+      truncated: false,
+    });
+    expect(b?.response).toBeUndefined();
+    await expect(audit.recent(1)).resolves.toMatchObject([{ tool: "b" }]);
+  });
 });

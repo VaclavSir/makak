@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream } from "node:stream/web";
@@ -8,6 +9,8 @@ import type { Audit, AuditEntry } from "./audit.ts";
 import { reasonOf } from "./health.ts";
 import type { McpHealth } from "./health.ts";
 import type { OAuth } from "./oauth.ts";
+import { cut, responseOf } from "./responses.ts";
+import type { CallResponse } from "./responses.ts";
 import type { McpStore } from "./store.ts";
 import { createUpstream, failureOf, SignedOutError } from "./upstream.ts";
 import type { Upstream } from "./upstream.ts";
@@ -62,6 +65,9 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 /** How much of a server's error answer is logged. */
 const MAX_LOGGED_BODY = 500;
+
+/** How much of a tool call's answer is read for the audit log, as it passes. */
+const MAX_CAPTURED = 1024 * 1024;
 
 // What passes between the gateway and the server. Not the gateway's
 // Authorization: that is the registration's token, for the Panel only.
@@ -129,6 +135,34 @@ const sendToolError = (res: ServerResponse, id: unknown, text: string) => {
   });
 };
 
+/** Called with a body once it has all passed, or as much as was kept. */
+type Captured = (text: string, complete: boolean) => void;
+
+/** Passes the body on unchanged, keeping its start. */
+const capture = (
+  body: globalThis.ReadableStream<Uint8Array<ArrayBuffer>>,
+  done: Captured
+) => {
+  const decoder = new TextDecoder();
+  let text = "";
+  let complete = true;
+  return body.pipeThrough(
+    new TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>({
+      flush: () => {
+        done(complete ? text + decoder.decode() : text, complete);
+      },
+      transform: (chunk, controller) => {
+        if (text.length < MAX_CAPTURED) {
+          text += decoder.decode(chunk, { stream: true });
+        } else {
+          complete = false;
+        }
+        controller.enqueue(chunk);
+      },
+    })
+  );
+};
+
 const signedOutText = (server: string) =>
   `Makak Panel is not signed in to the ${server} MCP server. Ask the user to sign in on the Panel's MCP servers page, then try again.`;
 
@@ -191,6 +225,14 @@ export const createMcpProxy = ({
     health?.noteError(server, message);
   };
 
+  const respond = async (response: Parameters<Audit["respond"]>[0]) => {
+    try {
+      await audit.respond(response);
+    } catch (error) {
+      log(`Could not write the MCP audit log: ${(error as Error).message}`);
+    }
+  };
+
   /** False when the entry couldn't be written. */
   const record = async (entry: AuditEntry) => {
     try {
@@ -233,7 +275,15 @@ export const createMcpProxy = ({
     server: McpServer,
     body: string | undefined,
     signal: AbortSignal,
-    asked = askedIn(req.method)
+    {
+      asked = askedIn(req.method),
+      call,
+    }: {
+      /** What the request asked, for a refusal's message. */
+      asked?: string;
+      /** A tool call, told of its answer once it has passed. */
+      call?: { answered: (response: CallResponse) => void; id: unknown };
+    } = {}
   ): Promise<void> => {
     const headers: Record<string, string> = {};
     for (const name of REQUEST_HEADERS) {
@@ -266,16 +316,31 @@ export const createMcpProxy = ({
         server.name,
         `HTTP ${response.status} to ${asked}: ${reasonOf(text)}`
       );
+      call?.answered(cut(true, `HTTP ${response.status}: ${reasonOf(text)}`));
       res.writeHead(response.status, passed);
       res.end(text);
       return;
     }
     res.writeHead(response.status, passed);
     if (response.body === null) {
+      call?.answered(cut(false, ""));
       res.end();
-    } else {
-      Readable.fromWeb(response.body as ReadableStream).pipe(res);
+      return;
     }
+    const streamed =
+      call === undefined
+        ? response.body
+        : capture(response.body, (text, complete) => {
+            call.answered(
+              responseOf(
+                text,
+                response.headers.get("content-type"),
+                call.id,
+                complete
+              )
+            );
+          });
+    Readable.fromWeb(streamed as ReadableStream).pipe(res);
   };
 
   /** Why calls to the server can't be made now, if they can't. */
@@ -311,9 +376,11 @@ export const createMcpProxy = ({
       return;
     }
     const started = now();
+    const id = randomUUID();
     const base = {
       arguments: params.arguments,
       at: new Date(started).toISOString(),
+      id,
       server: server.name,
       tool,
     };
@@ -344,6 +411,21 @@ export const createMcpProxy = ({
       request = answer.id;
     }
 
+    /** Keeps the answer with the call; a failure only loses the answer. */
+    const answered = (by: "panel" | "server", response: CallResponse) => {
+      void respond({
+        at: new Date(now()).toISOString(),
+        by,
+        call: id,
+        ...response,
+      });
+    };
+    /** Answers the call with an error, as the Panel. */
+    const refuse = (text: string) => {
+      sendToolError(res, message.id, text);
+      answered("panel", cut(true, text));
+    };
+
     // Recorded before the server sees the call, so nothing reaches it unlogged.
     const recorded = await record({
       ...base,
@@ -360,26 +442,30 @@ export const createMcpProxy = ({
       );
     } else if (outcome === "allowed" || outcome === "approved") {
       try {
-        await forward(req, res, server, body, signal, "tools/call");
+        await forward(req, res, server, body, signal, {
+          asked: "tools/call",
+          call: {
+            answered: (response) => {
+              answered("server", response);
+            },
+            id: message.id,
+          },
+        });
       } catch (error) {
         if (signal.aborted || res.headersSent) {
           throw error;
         }
         if (error instanceof SignedOutError) {
-          sendToolError(res, message.id, signedOutText(server.name));
+          refuse(signedOutText(server.name));
           return;
         }
         failed(server.name, `Can't be reached: ${failureOf(error)}`);
-        sendToolError(
-          res,
-          message.id,
-          `Makak Panel could not reach the ${server.name} MCP server.`
-        );
+        refuse(`Makak Panel could not reach the ${server.name} MCP server.`);
       }
     } else if (outcome === "denied") {
-      sendToolError(res, message.id, deniedText(tool));
+      refuse(deniedText(tool));
     } else if (outcome === "held") {
-      sendToolError(res, message.id, heldText(tool, request ?? ""));
+      refuse(heldText(tool, request ?? ""));
     }
   };
 
@@ -418,7 +504,9 @@ export const createMcpProxy = ({
       });
       return;
     }
-    await forward(req, res, server, body, signal, askedIn("POST", message));
+    await forward(req, res, server, body, signal, {
+      asked: askedIn("POST", message),
+    });
   };
 
   const handle = async (
