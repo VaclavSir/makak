@@ -81,4 +81,25 @@ describe(createAudit, () => {
     expect(b?.response).toBeUndefined();
     await expect(audit.recent(1)).resolves.toMatchObject([{ tool: "b" }]);
   });
+
+  it("reads from the end in pieces, whatever falls across them", async () => {
+    // Pieces of a few bytes, so lines and characters fall across them.
+    const audit = createAudit(dir, { chunkBytes: 5 });
+    await audit.record({ ...entry("a"), id: "1" });
+    await audit.respond({
+      at: "2026-10-25T10:00:01.000Z",
+      by: "server",
+      call: "1",
+      error: false,
+      text: "Příliš žluťoučký kůň 🐎",
+      truncated: false,
+    });
+    await appendFile(path.join(dir, "mcp-audit.jsonl"), '{"edited by\n');
+    await audit.record(entry("b"));
+
+    const recent = await audit.recent(10);
+    expect(recent.map(({ tool }) => tool)).toStrictEqual(["b", "a"]);
+    expect(recent[1]?.response?.text).toBe("Příliš žluťoučký kůň 🐎");
+    await expect(audit.recent(1)).resolves.toMatchObject([{ tool: "b" }]);
+  });
 });

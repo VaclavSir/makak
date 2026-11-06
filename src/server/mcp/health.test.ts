@@ -127,6 +127,18 @@ describe(createMcpHealth, () => {
     expect(requests[2]?.headers["mcp-protocol-version"]).toBe("2025-03-26");
   });
 
+  it("ends the session when a later step fails", async () => {
+    const { requests, upstream } = fakeServer({
+      "tools/list": () => new Response("Bad gateway", { status: 502 }),
+    });
+    const result = await healthOf(upstream).check("gitlab");
+    expect(result).toMatchObject({ ok: false });
+    expect(requests.at(-1)).toMatchObject({
+      headers: { "mcp-session-id": "s-1" },
+      method: "DELETE",
+    });
+  });
+
   it("reads answers sent as events, and every page of tools", async () => {
     let pages = 0;
     const { upstream } = fakeServer({

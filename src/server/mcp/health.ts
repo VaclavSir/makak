@@ -213,40 +213,49 @@ export const createMcpHealth = ({
       return message.result;
     };
 
-    const init = (await send("initialize", {
-      capabilities: {},
-      clientInfo: CLIENT,
-      protocolVersion: PROTOCOL_VERSION,
-    })) as { protocolVersion?: unknown } | undefined;
-    if (typeof init?.protocolVersion === "string") {
-      headers["mcp-protocol-version"] = init.protocolVersion;
-    }
-    await send("notifications/initialized");
-    const tools: McpTool[] = [];
-    let cursor: string | undefined;
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      // oxlint-disable-next-line no-await-in-loop -- each page names the next
-      const listed = toolsOf(await send("tools/list", cursor && { cursor }));
-      tools.push(...listed.tools);
-      ({ cursor } = listed);
-      if (cursor === undefined) {
-        break;
+    // Ended however the check goes: a local server's session is a process.
+    const end = async () => {
+      if (headers["mcp-session-id"] === undefined) {
+        return;
       }
-    }
-    if (headers["mcp-session-id"] !== undefined) {
-      // Ending the session is a courtesy; a server may not support it.
+      // A server may not support it, and the check's own time may be up.
       try {
         const response = await upstream(server, {
           headers,
           method: "DELETE",
-          signal,
+          signal: AbortSignal.timeout(timeoutMs),
         });
         await response.body?.cancel();
       } catch {
-        // The tools are listed either way.
+        // The check's result stands either way.
       }
+    };
+
+    try {
+      const init = (await send("initialize", {
+        capabilities: {},
+        clientInfo: CLIENT,
+        protocolVersion: PROTOCOL_VERSION,
+      })) as { protocolVersion?: unknown } | undefined;
+      if (typeof init?.protocolVersion === "string") {
+        headers["mcp-protocol-version"] = init.protocolVersion;
+      }
+      await send("notifications/initialized");
+      const tools: McpTool[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        // oxlint-disable-next-line no-await-in-loop -- each page names the next
+        const listed = toolsOf(await send("tools/list", cursor && { cursor }));
+        tools.push(...listed.tools);
+        ({ cursor } = listed);
+        if (cursor === undefined) {
+          break;
+        }
+      }
+      return tools;
+    } finally {
+      await end();
     }
-    return tools;
   };
 
   const run = async (server: McpServer): Promise<CheckResult> => {

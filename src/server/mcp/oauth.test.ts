@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -27,7 +27,27 @@ interface Fake {
   tokenRequests: URLSearchParams[];
   /** Metadata pointing somewhere it must not. */
   insecure: boolean;
+  /** Registration and tokens answered with a page, as a captive portal does. */
+  pages?: boolean;
 }
+
+/** Answers registration and tokens with a page, when the fake says so. */
+const answersWithPage = (
+  fake: Fake,
+  req: IncomingMessage,
+  res: ServerResponse
+) => {
+  if (
+    fake.pages !== true ||
+    req.method !== "POST" ||
+    !["/oauth/register", "/oauth/token"].includes(req.url ?? "")
+  ) {
+    return false;
+  }
+  res.writeHead(200, { "Content-Type": "text/html" });
+  res.end("<html>Log in to the Wi-Fi</html>");
+  return true;
+};
 
 /**
  * A server shaped like GitLab's: the MCP endpoint's 401 points to its
@@ -45,6 +65,9 @@ const fakeGitLab = (fake: Fake) =>
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
     };
+    if (answersWithPage(fake, req, res)) {
+      return;
+    }
     switch (`${req.method} ${req.url}`) {
       case "POST /api/v4/mcp": {
         res.writeHead(401, {
@@ -230,6 +253,20 @@ describe(createOAuth, () => {
     await expect(oauth.status("gitlab")).resolves.toStrictEqual({
       signedIn: false,
     });
+  });
+
+  it("says when registering or signing in gets a page instead of JSON", async () => {
+    fake.pages = true;
+    await expect(oauthFor().begin("gitlab")).rejects.toThrow(
+      /refused to register the Panel/u
+    );
+    fake.pages = false;
+    const oauth = oauthFor();
+    const url = new URL(await oauth.begin("gitlab"));
+    fake.pages = true;
+    await expect(
+      oauth.finish(url.searchParams.get("state") ?? "", "code-1")
+    ).rejects.toThrow(/refused the sign-in/u);
   });
 
   it("keeps its registration, unless the Panel's address changed", async () => {

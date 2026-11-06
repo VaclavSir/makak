@@ -118,6 +118,18 @@ const base64url = (bytes: Buffer) => bytes.toString("base64url");
 const challengeOf = (verifier: string) =>
   base64url(createHash("sha256").update(verifier).digest());
 
+/** A successful answer's JSON, or undefined, e.g. for a captive portal's page. */
+const jsonOf = async (response: Response): Promise<unknown> => {
+  if (!response.ok) {
+    return undefined;
+  }
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+};
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
 
 /** Endpoints get credentials, so they must be HTTPS, except on this machine. */
@@ -331,9 +343,7 @@ export const createOAuth = ({
       },
       `${server.name}'s sign-in`
     );
-    const parsed = registrationSchema.safeParse(
-      response.ok ? await response.json() : undefined
-    );
+    const parsed = registrationSchema.safeParse(await jsonOf(response));
     if (!parsed.success) {
       throw new OAuthError(
         `${server.name} refused to register the Panel as a client (HTTP ${response.status})`
@@ -377,9 +387,7 @@ export const createOAuth = ({
       { body, headers, method: "POST" },
       `${name}'s sign-in`
     );
-    const parsed = tokenSchema.safeParse(
-      response.ok ? await response.json() : undefined
-    );
+    const parsed = tokenSchema.safeParse(await jsonOf(response));
     if (!parsed.success) {
       return { refused: true, status: response.status } as const;
     }

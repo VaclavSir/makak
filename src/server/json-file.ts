@@ -3,6 +3,8 @@ import path from "node:path";
 
 import type * as z from "zod";
 
+import { settled } from "./promises.ts";
+
 export class StateError extends Error {
   override name = "StateError";
 }
@@ -15,14 +17,6 @@ export const isStateError = (error: unknown): error is StateError =>
   error instanceof Error && error.name === "StateError";
 
 /** Waits for a promise, ignoring how it ended. */
-const settle = async (promise: Promise<unknown>) => {
-  try {
-    await promise;
-  } catch {
-    // Already reported to whoever was waiting for it.
-  }
-};
-
 export interface JsonFile<T> {
   read: () => Promise<T>;
   /** Reads the file, changes it and writes it back, after earlier updates. */
@@ -74,7 +68,7 @@ export const createJsonFile = <S extends z.ZodType>(
     previous: Promise<unknown>,
     change: (value: z.output<S>) => void
   ) => {
-    await settle(previous);
+    await settled(previous);
     const value = await read();
     change(value);
     await save(value);
@@ -84,7 +78,7 @@ export const createJsonFile = <S extends z.ZodType>(
     read,
     update: (change) => {
       const next = apply(queue, change);
-      queue = settle(next);
+      queue = settled(next);
       return next;
     },
   };

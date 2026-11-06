@@ -105,6 +105,22 @@ describe(createSandboxes, () => {
     expect(sbx.calls()).toBe(1);
   });
 
+  it("lists afresh after a change, even with a listing in progress", async () => {
+    const before = Promise.withResolvers<Sandbox[]>();
+    const results = [before.promise, Promise.resolve([...FAKE_SANDBOXES])];
+    const sandboxes = createSandboxes({
+      list: () => results.shift() ?? Promise.resolve([]),
+    });
+
+    const first = sandboxes.list();
+    sandboxes.changed();
+    await expect(sandboxes.list().then(names)).resolves.toHaveLength(3);
+    // The listing from before the change doesn't come back later.
+    before.resolve([]);
+    await first;
+    await expect(sandboxes.recent().then(names)).resolves.toHaveLength(3);
+  });
+
   describe("recent", () => {
     it("answers from the expired listing while a new one runs", async () => {
       const time = clock();

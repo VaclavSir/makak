@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
 
 import type { StdioCommand } from "../tools/stdio.ts";
@@ -96,8 +97,10 @@ interface Message {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
+// Any tools/call is gated, with an id or without: a server may run one
+// sent as a notification.
 const isToolCall = (message: unknown) =>
-  isRecord(message) && message.method === "tools/call" && "id" in message;
+  isRecord(message) && message.method === "tools/call";
 
 /** What a request asked, to say which one a server refused. */
 const askedIn = (method: string | undefined, message?: unknown) => {
@@ -340,7 +343,8 @@ export const createMcpProxy = ({
               )
             );
           });
-    Readable.fromWeb(streamed as ReadableStream).pipe(res);
+    // A server hanging up halfway fails this, like an unreachable one.
+    await pipeline(Readable.fromWeb(streamed as ReadableStream), res);
   };
 
   /** Why calls to the server can't be made now, if they can't. */
@@ -496,6 +500,10 @@ export const createMcpProxy = ({
         return;
       }
     } else if (isToolCall(message)) {
+      if (!("id" in (message as Message))) {
+        sendError(res, 400, "A tool call needs an id");
+        return;
+      }
       await call(req, res, {
         body,
         message: message as Message,

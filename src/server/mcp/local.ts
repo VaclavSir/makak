@@ -211,6 +211,10 @@ export const createLocalServers = ({
       answers = await exchange(started, messages, signal);
     } catch (error) {
       if (signal?.aborted === true) {
+        // Nobody got the new session's id, so nobody can end it.
+        if (sessionId === undefined) {
+          started.child.kill();
+        }
         throw error;
       }
       return rpcError(
@@ -225,16 +229,24 @@ export const createLocalServers = ({
     return json(200, batch ? answers : answers[0], sessionHeader);
   };
 
-  /** The stream of the server's own messages, for the session's client. */
+  /**
+   * The stream of the server's own messages, for the session's client. A
+   * newer GET takes over; an older one ending leaves it be.
+   */
   const listen = (session: Session, signal: AbortSignal | undefined) => {
-    const body = new ReadableStream<string>({
-      cancel: () => {
+    let own: ReadableStreamDefaultController<string> | undefined;
+    const release = () => {
+      if (session.stream === own) {
         session.stream = undefined;
-      },
+      }
+    };
+    const body = new ReadableStream<string>({
+      cancel: release,
       start: (controller) => {
+        own = controller;
         session.stream = controller;
         signal?.addEventListener("abort", () => {
-          session.stream = undefined;
+          release();
           try {
             controller.close();
           } catch {

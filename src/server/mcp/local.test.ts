@@ -215,6 +215,50 @@ describe(createLocalServers, () => {
     );
   });
 
+  it("keeps streaming to a newer GET when an older one ends", async () => {
+    const { processes, spawn } = scripted();
+    const servers = local(spawn);
+    const starting = servers.request(SERVER, post(rpc(1, "initialize")));
+    processes[0]?.handlers.onLine('{"jsonrpc":"2.0","id":1,"result":{}}');
+    await starting;
+
+    const open = async () => {
+      const controller = new AbortController();
+      const stream = await servers.request(SERVER, {
+        headers: { "mcp-session-id": "s1" },
+        method: "GET",
+        signal: controller.signal,
+      });
+      return { controller, stream };
+    };
+    const older = await open();
+    const newer = await open();
+    older.controller.abort();
+    await older.stream.text();
+
+    const note =
+      '{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}';
+    processes[0]?.handlers.onLine(note);
+    newer.controller.abort();
+    await expect(newer.stream.text()).resolves.toBe(
+      `event: message\ndata: ${note}\n\n`
+    );
+  });
+
+  it("stops the process of a session whose initialize the caller left", async () => {
+    const { processes, spawn } = scripted();
+    const servers = local(spawn);
+    const controller = new AbortController();
+    const starting = servers.request(
+      SERVER,
+      post(rpc(1, "initialize"), undefined, controller.signal)
+    );
+    controller.abort();
+    await expect(starting).rejects.toThrow(/abort/iu);
+    expect(processes[0]?.killed).toBeTruthy();
+    expect(servers.status("notes").processes).toBe(0);
+  });
+
   it("stops waiting when the caller hangs up", async () => {
     const { processes, spawn } = scripted();
     const servers = local(spawn);

@@ -16,6 +16,7 @@ import {
 } from "./envs.ts";
 import type { EnvFile } from "./envs.ts";
 import type { McpLoads } from "./mcp/loads.ts";
+import { quietly } from "./promises.ts";
 import type { GitStatus, SandboxGit, Work } from "./sandbox-git.ts";
 import type { Sandboxes } from "./sandboxes.ts";
 import type { EnvRecord, SandboxStore } from "./state.ts";
@@ -193,14 +194,6 @@ const checkUnchanged = (
 };
 
 /** Runs a follow-up whose failure must not hide what came before it. */
-const quietly = async (followUp: () => Promise<unknown>) => {
-  try {
-    await followUp();
-  } catch {
-    // The earlier outcome is what the user needs to see.
-  }
-};
-
 export const createLifecycle = ({
   envDir,
   mcp,
@@ -225,7 +218,7 @@ export const createLifecycle = ({
       return await change();
     } finally {
       busy.delete(name);
-      sandboxes.invalidate();
+      sandboxes.changed();
     }
   };
 
@@ -370,11 +363,11 @@ export const createLifecycle = ({
     create: (request, hashes) =>
       exclusive(request.name, async () => {
         // Fresh, so a sandbox created a moment ago under this name is seen.
-        sandboxes.invalidate();
+        sandboxes.changed();
         const { files, servers, spec } = await prepareCreate(request);
         checkUnchanged(files, hashes, SINCE_PLAN);
         const record = async () => {
-          sandboxes.invalidate();
+          sandboxes.changed();
           const sandbox = await sandboxes.find(spec.name);
           if (sandbox !== undefined) {
             await store.setEnv(sandbox.id, {

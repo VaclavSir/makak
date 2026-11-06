@@ -49,6 +49,15 @@ const upstream = () => {
       res.end();
       return;
     }
+    if ((body as { method?: unknown } | undefined)?.method === "broken") {
+      // Starts an answer, then hangs up halfway, as a restarting server does.
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write("event: message\ndata: {");
+      setTimeout(() => {
+        res.destroy();
+      }, 10);
+      return;
+    }
     if ((body as { method?: unknown } | undefined)?.method === "forbidden") {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end('{"error":"insufficient_scope"}');
@@ -418,6 +427,17 @@ describe(createMcpProxy, () => {
       });
     });
 
+    it("survives a server hanging up halfway through its answer", async () => {
+      const response = await post({ id: 3, jsonrpc: "2.0", method: "broken" });
+      expect(response.status).toBe(200);
+      // The agent sees the answer break off, as it did.
+      await expect(response.text()).rejects.toThrow(/terminated/u);
+      // Still serving.
+      await expect(
+        resultText(await post(toolCall("get_issue")))
+      ).resolves.toMatchObject({ isError: false, text: "upstream" });
+    });
+
     it("tells the agent when the server can't be reached", async () => {
       up.closeAllConnections();
       up.close();
@@ -648,6 +668,17 @@ describe(createMcpProxy, () => {
       const response = await post([toolCall("get_issue")]);
       expect(response.status).toBe(400);
       expect(received).toStrictEqual([]);
+    });
+
+    it("refuses a tool call without an id, alone or in a batch", async () => {
+      const { id: _, ...call } = toolCall("create_note");
+      for (const body of [call, [call]]) {
+        // oxlint-disable-next-line no-await-in-loop -- one at a time
+        const response = await post(body);
+        expect(response.status).toBe(400);
+      }
+      expect(received).toStrictEqual([]);
+      await expect(audit.recent(5)).resolves.toStrictEqual([]);
     });
   });
 

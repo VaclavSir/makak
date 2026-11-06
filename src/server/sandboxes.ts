@@ -1,3 +1,4 @@
+import { settled } from "./promises.ts";
 import type { Sandbox, Sbx } from "./tools/index.ts";
 
 export interface Sandboxes {
@@ -12,6 +13,11 @@ export interface Sandboxes {
   recent: () => Promise<Sandbox[]>;
   /** Forgets the cached listing, e.g. when a published port refused a connection. */
   invalidate: () => void;
+  /**
+   * After sbx changed the sandboxes: the next listing starts after this,
+   * even if one is in progress, which may predate the change.
+   */
+  changed: () => void;
 }
 
 export interface SandboxesOptions {
@@ -23,15 +29,6 @@ export interface SandboxesOptions {
 }
 
 const byName = (a: Sandbox, b: Sandbox) => a.name.localeCompare(b.name);
-
-/** Lets a promise fail without an unhandled rejection. */
-const settleQuietly = async (promise: Promise<unknown>) => {
-  try {
-    await promise;
-  } catch {
-    // Reported elsewhere.
-  }
-};
 
 /**
  * `sbx ls`, shared between concurrent callers and reused for a moment after
@@ -57,7 +54,10 @@ export const createSandboxes = (
     try {
       const sandboxes = await entry.sandboxes;
       entry.at = now();
-      last = { at: entry.at, sandboxes };
+      // A listing dropped by `changed` may predate the change.
+      if (cached === entry) {
+        last = { at: entry.at, sandboxes };
+      }
     } catch {
       // The callers see the failure; this only stops it being reused.
       if (cached === entry) {
@@ -88,11 +88,15 @@ export const createSandboxes = (
     if (answer === undefined || now() - answer.at >= maxStaleMs) {
       return listing;
     }
-    settleQuietly(listing);
+    void settled(listing);
     return Promise.resolve(answer.sandboxes);
   };
 
   return {
+    changed: () => {
+      cached = undefined;
+      last = undefined;
+    },
     find: async (name) => {
       const sandboxes = await list();
       return sandboxes.find((sandbox) => sandbox.name === name);

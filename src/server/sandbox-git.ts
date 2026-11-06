@@ -1,3 +1,4 @@
+import { mapLimited, settled } from "./promises.ts";
 import type { Commit, Git, Ref, Sandbox } from "./tools/index.ts";
 
 // The branches of clone-mode sandboxes, as their host repositories hold them.
@@ -101,13 +102,8 @@ const shasByBranch = (refs: Ref[], prefix: string) =>
   );
 
 /** Waits for a promise, ignoring how it ended. */
-const settle = async (promise: Promise<unknown>) => {
-  try {
-    await promise;
-  } catch {
-    // Reported to whoever waited for it.
-  }
-};
+/** How many copied branches are compared with the host's at once. */
+const BRANCHES_AT_ONCE = 4;
 
 export const createSandboxGit = (git: Git): SandboxGit => {
   // One git change per sandbox at a time, so an action never sees the
@@ -117,11 +113,11 @@ export const createSandboxGit = (git: Git): SandboxGit => {
   const serially = <T>(id: string, task: () => Promise<T>): Promise<T> => {
     const previous = queues.get(id) ?? Promise.resolve();
     const run = async () => {
-      await settle(previous);
+      await settled(previous);
       return await task();
     };
     const next = run();
-    const tail = settle(next);
+    const tail = settled(next);
     queues.set(id, tail);
     const forget = async () => {
       await tail;
@@ -237,14 +233,17 @@ export const createSandboxGit = (git: Git): SandboxGit => {
       other === undefined
         ? undefined
         : { ...(await git.aheadBehind(repo, sha, other)), sha: other };
-    const branches = await Promise.all(
-      [...shasByBranch(copied, prefix)].map(async ([name, sha]) => ({
+    // Up to two git processes per branch, so a few branches at a time.
+    const branches = await mapLimited(
+      [...shasByBranch(copied, prefix)],
+      BRANCHES_AT_ONCE,
+      async ([name, sha]) => ({
         current: name === current,
         host: await compare(sha, hostShas.get(name)),
         name,
         origin: await compare(sha, originShas.get(name)),
         sha,
-      }))
+      })
     );
     const { commits, count } = await git.unreachable(
       repo,

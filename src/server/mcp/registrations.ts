@@ -1,3 +1,4 @@
+import { quietly } from "../promises.ts";
 import type { Sbx } from "../tools/index.ts";
 import type { McpHealth } from "./health.ts";
 import type { OAuth } from "./oauth.ts";
@@ -57,14 +58,6 @@ export class RegistrationError extends Error {
 export const tokenSecret = (server: string): string => `mcp:${server}:token`;
 
 /** Lets a cleanup fail without hiding the error that called for it. */
-const quietly = async (cleanup: () => Promise<unknown>) => {
-  try {
-    await cleanup();
-  } catch {
-    // The earlier error is what the user needs to see.
-  }
-};
-
 export const createMcpRegistrations = ({
   health,
   now = Date.now,
