@@ -5,6 +5,7 @@
   import type { Snippet } from "svelte";
   import RunHistory from "#lib/components/run-history.svelte";
   import {
+    moveTab,
     parseStoredTabs,
     neighbourTab,
     replaceTab,
@@ -16,7 +17,8 @@
   import type { Run } from "#server/tools/index.ts";
 
   // A sandbox's pages as tabs: its overview, then a tab per run being
-  // followed. Which tabs are open is remembered in this browser only.
+  // followed, in the order they're dragged to. Which tabs are open, and
+  // their order, is remembered in this browser only.
 
   let {
     children,
@@ -200,6 +202,64 @@
     open = open.filter((each) => each !== tab);
   };
 
+  // Tabs shrink as more open, down to a width where they scroll instead;
+  // the current one is scrolled into view.
+  let strip = $state<HTMLDivElement>();
+  $effect(() => {
+    // Rerun when the tab changes, or tabs come and go.
+    void current;
+    void shown.length;
+    const tab = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (strip === undefined || tab === null || tab === undefined) {
+      return;
+    }
+    const start = tab.offsetLeft;
+    const end = start + tab.offsetWidth;
+    if (start < strip.scrollLeft) {
+      strip.scrollLeft = start;
+    } else if (end > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = end - strip.clientWidth;
+    }
+  });
+
+  // Dragging a run's tab onto another moves it before or after that one,
+  // by which half it is dropped on. The overview stays first.
+  let dragged = $state<string | undefined>();
+  let drop = $state<{ target: string; after: boolean } | undefined>();
+
+  const dragStart = (tab: string) => (event: DragEvent) => {
+    dragged = tab;
+    if (event.dataTransfer !== null) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+  };
+
+  const dragOver = (tab: string) => (event: DragEvent) => {
+    if (dragged === undefined) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer !== null) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = event.clientX > box.left + box.width / 2;
+    drop = tab === dragged ? undefined : { after, target: tab };
+  };
+
+  const dragEnd = () => {
+    dragged = undefined;
+    drop = undefined;
+  };
+
+  const dropped = (event: DragEvent) => {
+    event.preventDefault();
+    if (dragged !== undefined && drop !== undefined) {
+      open = moveTab(open, dragged, drop.target, drop.after);
+    }
+    dragEnd();
+  };
+
   setRunsContext({
     get failed() {
       return failed;
@@ -218,13 +278,39 @@
 </script>
 
 <nav class="tabs" aria-label="Runs">
-  <div class="strip">
-    <div class="tab" aria-current={current === undefined ? "page" : undefined}>
+  <div class="strip" role="list" bind:this={strip}>
+    <div
+      class="tab"
+      role="listitem"
+      aria-current={current === undefined ? "page" : undefined}
+    >
       <a href={base}>Overview</a>
     </div>
     {#each shown as tab (tab)}
       {@const run = runOf(tab)}
-      <div class="tab" aria-current={tab === current ? "page" : undefined}>
+      <div
+        class={[
+          "tab",
+          "run",
+          {
+            "drop-after": drop?.target === tab && drop.after,
+            "drop-before": drop?.target === tab && !drop.after,
+            dragged: dragged === tab,
+          },
+        ]}
+        aria-current={tab === current ? "page" : undefined}
+        draggable="true"
+        role="listitem"
+        ondragstart={dragStart(tab)}
+        ondragover={dragOver(tab)}
+        ondragleave={() => {
+          if (drop?.target === tab) {
+            drop = undefined;
+          }
+        }}
+        ondrop={dropped}
+        ondragend={dragEnd}
+      >
         <a href={runPage(tab)} title={run?.command}>
           {#if run !== undefined}
             <span
@@ -279,8 +365,10 @@
     box-shadow: inset 0 -1px 0 var(--border);
   }
 
-  /* Scrolls sideways when there are many; History stays in view. */
+  /* Run tabs shrink as more open, like a browser's, then scroll sideways;
+     History stays in view. Positioned, for the current tab's offsetLeft. */
   .strip {
+    position: relative;
     display: flex;
     flex: 1;
     align-items: flex-end;
@@ -292,6 +380,7 @@
   .tab {
     display: flex;
     flex: none;
+    min-width: 0;
     align-items: center;
     margin-bottom: 1px;
     border: 1px solid var(--border);
@@ -314,6 +403,40 @@
     text-decoration: none;
   }
 
+  .tab.run {
+    position: relative;
+    flex: 0 1 auto;
+    min-width: 7rem;
+  }
+
+  .tab.run a {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tab.dragged {
+    opacity: 0.5;
+  }
+
+  /* Where a dragged tab would land: a bar on that side. */
+  .tab.drop-before::before,
+  .tab.drop-after::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent);
+    content: "";
+  }
+
+  .tab.drop-before::before {
+    left: -3px;
+  }
+
+  .tab.drop-after::after {
+    right: -3px;
+  }
+
   .tab:hover {
     color: var(--text);
   }
@@ -328,6 +451,7 @@
 
   .tab code {
     display: block;
+    min-width: 0;
     max-width: 16rem;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -55,6 +55,24 @@ export const replaceTab = (
   return open.filter((id) => id !== to).map((id) => (id === from ? to : id));
 };
 
+/**
+ * Moves the tab of `id` next to `target`, before it or `after` it, as
+ * dragging it there does. Unknown ids leave the order as it is.
+ */
+export const moveTab = (
+  open: readonly string[],
+  id: string,
+  target: string,
+  after: boolean
+): string[] => {
+  if (id === target || !open.includes(id) || !open.includes(target)) {
+    return [...open];
+  }
+  const rest = open.filter((each) => each !== id);
+  const index = rest.indexOf(target) + (after ? 1 : 0);
+  return [...rest.slice(0, index), id, ...rest.slice(index)];
+};
+
 /** The tab to show after closing `id`: the next one, else the previous. */
 export const neighbourTab = (
   tabs: readonly string[],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  moveTab,
   neighbourTab,
   parseStoredTabs,
   replaceTab,
@@ -74,6 +75,21 @@ describe(replaceTab, () => {
   it("never shows a run twice", () => {
     expect(replaceTab([A, B, D], B, D)).toStrictEqual([A, D]);
     expect(replaceTab([D], B, D)).toStrictEqual([D]);
+  });
+});
+
+describe(moveTab, () => {
+  it("puts the tab before or after the one it is dropped on", () => {
+    expect(moveTab([A, B, C, D], A, C, false)).toStrictEqual([B, A, C, D]);
+    expect(moveTab([A, B, C, D], A, C, true)).toStrictEqual([B, C, A, D]);
+    expect(moveTab([A, B, C, D], D, A, false)).toStrictEqual([D, A, B, C]);
+    expect(moveTab([A, B, C, D], C, D, true)).toStrictEqual([A, B, D, C]);
+  });
+
+  it("leaves the order for a tab dropped on itself, or unknown tabs", () => {
+    expect(moveTab([A, B], A, A, true)).toStrictEqual([A, B]);
+    expect(moveTab([A, B], C, A, false)).toStrictEqual([A, B]);
+    expect(moveTab([A, B], A, C, false)).toStrictEqual([A, B]);
   });
 });
 
