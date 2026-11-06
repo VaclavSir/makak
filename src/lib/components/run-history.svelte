@@ -1,10 +1,10 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
-  import type { SubmitFunction } from "$app/forms";
   import RunState from "#lib/components/run-state.svelte";
   import { formatTime } from "#lib/format.ts";
   import type { Run } from "#server/tools/index.ts";
+  import { idle, submitting } from "#lib/submit.ts";
 
   // Every run in the sandbox, newest first. Opening one shows it in a tab;
   // running one again opens the new run in a tab of its own.
@@ -23,15 +23,14 @@
   } = $props();
 
   let dialog: HTMLDialogElement;
-  let busy = $state<string | undefined>();
-  let message = $state("");
+  const form = $state(idle<string>());
 
   const base = $derived(resolve("/sandboxes/[name]", { name }));
   const runPage = (run: string) =>
     resolve("/sandboxes/[name]/runs/[run]", { name, run });
 
   export const show = () => {
-    message = "";
+    form.message = "";
     dialog.showModal();
   };
 
@@ -39,25 +38,15 @@
     dialog.close();
   };
 
-  const submit =
-    (run: Run): SubmitFunction =>
-    () => {
-      busy = run.id;
-      message = "";
-      return async ({ result, update }) => {
-        busy = undefined;
-        if (result.type === "failure") {
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        if (result.type === "redirect") {
-          close();
-        }
-        // Stay on the page this was opened on, unless it started a run.
-        await update({ navigate: false, refreshAll: false });
-        onchanged();
-      };
-    };
+  const submit = (run: Run) =>
+    submitting(form, run.id, async ({ result, update }) => {
+      if (result.type === "redirect") {
+        close();
+      }
+      // Stay on the page this was opened on, unless it started a run.
+      await update({ navigate: false, refreshAll: false });
+      onchanged();
+    });
 </script>
 
 <dialog bind:this={dialog} aria-labelledby="history-title" closedby="any">
@@ -65,8 +54,8 @@
     <h2 id="history-title">Runs</h2>
     <button type="button" onclick={close}>Close</button>
   </div>
-  {#if message !== ""}
-    <p class="error">{message}</p>
+  {#if form.message !== ""}
+    <p class="error">{form.message}</p>
   {/if}
   <table>
     <thead>
@@ -95,8 +84,8 @@
             >
               <input type="hidden" name="id" value={id} />
               <input type="hidden" name="run" value={run.id} />
-              <button type="submit" disabled={busy !== undefined}>
-                {#if busy === run.id}
+              <button type="submit" disabled={form.busy !== undefined}>
+                {#if form.busy === run.id}
                   {run.state === "running" ? "Stopping…" : "Starting…"}
                 {:else}
                   {run.state === "running" ? "Stop" : "Run again"}

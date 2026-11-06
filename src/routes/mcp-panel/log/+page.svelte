@@ -115,13 +115,6 @@
     color: var(--muted);
   }
 
-  .error {
-    border-radius: 6px;
-    background: var(--error-bg);
-    padding: 0.5rem 0.75rem;
-    color: var(--error-text);
-  }
-
   .filters {
     display: flex;
     flex-wrap: wrap;

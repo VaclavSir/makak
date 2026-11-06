@@ -94,6 +94,14 @@ interface Message {
   params?: unknown;
 }
 
+/** A tool call, checked and parsed, on its way to a server. */
+interface CallContext {
+  body: string;
+  message: Message;
+  server: McpServer;
+  signal: AbortSignal;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -361,60 +369,30 @@ export const createMcpProxy = ({
     }
   };
 
-  /** A tool call: let through, or held until the user decides. */
-  const call = async (
-    req: IncomingMessage,
-    res: ServerResponse,
-    context: {
-      body: string;
-      message: Message;
-      server: McpServer;
-      signal: AbortSignal;
-    }
-  ) => {
-    const { body, message, server, signal } = context;
-    const params = isRecord(message.params) ? message.params : {};
-    const tool = params.name;
-    if (typeof tool !== "string") {
-      sendError(res, 400, "tools/call needs a tool name");
-      return;
-    }
-    const started = now();
-    const id = randomUUID();
-    const base = {
-      arguments: params.arguments,
-      at: new Date(started).toISOString(),
-      id,
-      server: server.name,
-      tool,
-    };
-
-    // Not worth asking the user about a call that can't be made.
-    const signInProblem = await signInProblemOf(server);
-    if (signInProblem !== undefined) {
-      sendToolError(res, message.id, signInProblem);
-      return;
-    }
-
-    let outcome: Outcome | "allowed";
-    let request: string | undefined;
-    let earlier = false;
+  /** Whether a tool call may be made: allowed without asking, or by the user. */
+  const decide = async (
+    server: McpServer,
+    tool: string,
+    args: unknown,
+    signal: AbortSignal
+  ): Promise<{
+    earlier: boolean;
+    outcome: Outcome | "allowed";
+    request?: string;
+  }> => {
     const always = await store.allowed(server.name);
     if (server.allow.includes(tool) || always.includes(tool)) {
-      outcome = "allowed";
-    } else {
-      const answer = await approvals.ask(
-        {
-          arguments: params.arguments,
-          server: server.name,
-          tool,
-        },
-        { holdMs: server.holdMs, signal }
-      );
-      ({ earlier, outcome } = answer);
-      request = answer.id;
+      return { earlier: false, outcome: "allowed" };
     }
+    const { earlier, id, outcome } = await approvals.ask(
+      { arguments: args, server: server.name, tool },
+      { holdMs: server.holdMs, signal }
+    );
+    return { earlier, outcome, request: id };
+  };
 
+  /** Answering the call `id`, and keeping the answer in the audit log. */
+  const answering = (res: ServerResponse, message: Message, id: string) => {
     /** Keeps the answer with the call; a failure only loses the answer. */
     const answered = (by: "panel" | "server", response: CallResponse) => {
       void respond({
@@ -429,48 +407,98 @@ export const createMcpProxy = ({
       sendToolError(res, message.id, text);
       answered("panel", cut(true, text));
     };
+    return { answered, refuse };
+  };
+
+  /** Makes a call that may be made; if the server can't be reached, says so. */
+  const make = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    { body, message, server, signal }: CallContext,
+    { answered, refuse }: ReturnType<typeof answering>
+  ) => {
+    try {
+      await forward(req, res, server, body, signal, {
+        asked: "tools/call",
+        call: {
+          answered: (response) => {
+            answered("server", response);
+          },
+          id: message.id,
+        },
+      });
+    } catch (error) {
+      if (signal.aborted || res.headersSent) {
+        throw error;
+      }
+      if (error instanceof SignedOutError) {
+        refuse(signedOutText(server.name));
+        return;
+      }
+      failed(server.name, `Can't be reached: ${failureOf(error)}`);
+      refuse(`Makak Panel could not reach the ${server.name} MCP server.`);
+    }
+  };
+
+  /** A tool call: let through, or held until the user decides. */
+  const call = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    context: CallContext
+  ) => {
+    const { message, server, signal } = context;
+    const params = isRecord(message.params) ? message.params : {};
+    const tool = params.name;
+    if (typeof tool !== "string") {
+      sendError(res, 400, "tools/call needs a tool name");
+      return;
+    }
+    const started = now();
+
+    // Not worth asking the user about a call that can't be made.
+    const signInProblem = await signInProblemOf(server);
+    if (signInProblem !== undefined) {
+      sendToolError(res, message.id, signInProblem);
+      return;
+    }
+
+    const { earlier, outcome, request } = await decide(
+      server,
+      tool,
+      params.arguments,
+      signal
+    );
+    const id = randomUUID();
+    const answer = answering(res, message, id);
 
     // Recorded before the server sees the call, so nothing reaches it unlogged.
     const recorded = await record({
-      ...base,
+      arguments: params.arguments,
+      at: new Date(started).toISOString(),
       earlier,
+      id,
       ms: now() - started,
       outcome,
       request,
+      server: server.name,
+      tool,
     });
-    if (!recorded && (outcome === "allowed" || outcome === "approved")) {
-      sendToolError(
-        res,
-        message.id,
-        "Makak Panel could not record this call in its audit log, so it was not made."
-      );
-    } else if (outcome === "allowed" || outcome === "approved") {
-      try {
-        await forward(req, res, server, body, signal, {
-          asked: "tools/call",
-          call: {
-            answered: (response) => {
-              answered("server", response);
-            },
-            id: message.id,
-          },
-        });
-      } catch (error) {
-        if (signal.aborted || res.headersSent) {
-          throw error;
-        }
-        if (error instanceof SignedOutError) {
-          refuse(signedOutText(server.name));
-          return;
-        }
-        failed(server.name, `Can't be reached: ${failureOf(error)}`);
-        refuse(`Makak Panel could not reach the ${server.name} MCP server.`);
+    if (outcome === "allowed" || outcome === "approved") {
+      if (recorded) {
+        await make(req, res, context, answer);
+      } else {
+        sendToolError(
+          res,
+          message.id,
+          "Makak Panel could not record this call in its audit log, so it was not made."
+        );
       }
     } else if (outcome === "denied") {
-      refuse(deniedText(tool));
+      answer.refuse(deniedText(tool));
     } else if (outcome === "held") {
-      refuse(heldText(tool, request ?? ""));
+      answer.refuse(heldText(tool, request ?? ""));
     }
+    // Gone: the caller left, so there is no one to answer.
   };
 
   const post = async (

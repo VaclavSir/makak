@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SubmitFunction } from "$app/forms";
   import type { ToolRow } from "#lib/mcp.ts";
+  import { idle, submitting } from "#lib/submit.ts";
 
   // A server's tools, with whether each runs without asking, and Allow or
   // Ask to change that. Posts to the servers page, which it is opened on.
@@ -18,24 +18,17 @@
   } = $props();
 
   let dialog: HTMLDialogElement;
-  let message = $state("");
+  const form = $state(idle());
 
   export const show = () => {
-    message = "";
+    form.message = "";
     dialog.showModal();
   };
 
   // Failures show here: the page's own message is behind the dialog.
-  const submit: SubmitFunction =
-    () =>
-    async ({ result, update }) => {
-      if (result.type === "failure") {
-        message = String(result.data?.message ?? "It didn't work.");
-        return;
-      }
-      message = "";
-      await update();
-    };
+  const submit = submitting(form, true, async ({ update }) => {
+    await update();
+  });
 </script>
 
 <dialog bind:this={dialog} aria-labelledby={`tools-${server}`} closedby="any">
@@ -48,8 +41,8 @@
       }}>Close</button
     >
   </div>
-  {#if message !== ""}
-    <p class="error" role="alert">{message}</p>
+  {#if form.message !== ""}
+    <p class="error" role="alert">{form.message}</p>
   {/if}
   {#if tools.length === 0}
     <p class="hint">
@@ -138,13 +131,6 @@
 
   .hint {
     color: var(--muted);
-  }
-
-  .error {
-    border-radius: 6px;
-    background: var(--error-bg);
-    padding: 0.5rem 0.75rem;
-    color: var(--error-text);
   }
 
   ul {

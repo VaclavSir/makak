@@ -2,7 +2,6 @@
   import { enhance } from "$app/forms";
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import type { SubmitFunction } from "$app/forms";
   import RunState from "#lib/components/run-state.svelte";
   import TerminalView from "#lib/components/terminal-view.svelte";
   import { RUN_PAGE } from "#lib/dependencies.ts";
@@ -10,43 +9,33 @@
   import { runIdOf } from "#lib/run-tabs.ts";
   import { getRunsContext } from "#lib/runs-context.ts";
   import type { PageProps } from "./$types";
+  import { idle, submitting } from "#lib/submit.ts";
 
   let { data }: PageProps = $props();
 
   const runs = getRunsContext();
 
-  let busy = $state<"rerun" | "stop" | undefined>();
-  let message = $state("");
+  const form = $state(idle<"rerun" | "stop">());
 
   const sandboxPage = $derived(
     resolve("/sandboxes/[name]", { name: data.sandbox.name })
   );
 
-  const submit =
-    (what: NonNullable<typeof busy>): SubmitFunction =>
-    () => {
-      busy = what;
-      message = "";
-      return async ({ result, update }) => {
-        busy = undefined;
-        if (result.type === "failure") {
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        // The rerun takes this tab over.
-        const rerun =
-          result.type === "redirect" ? runIdOf(result.location) : undefined;
-        if (data.run !== undefined && rerun !== undefined) {
-          runs.rerun(data.run.id, rerun);
-        }
-        // Stay here: the actions belong to the overview.
-        await update({ navigate: false, refreshAll: false });
-        if (rerun === undefined) {
-          await invalidate(RUN_PAGE, true);
-        }
-        await runs.refresh();
-      };
-    };
+  const submit = (what: "rerun" | "stop") =>
+    submitting(form, what, async ({ result, update }) => {
+      // The rerun takes this tab over.
+      const rerun =
+        result.type === "redirect" ? runIdOf(result.location) : undefined;
+      if (data.run !== undefined && rerun !== undefined) {
+        runs.rerun(data.run.id, rerun);
+      }
+      // Stay here: the actions belong to the overview.
+      await update({ navigate: false, refreshAll: false });
+      if (rerun === undefined) {
+        await invalidate(RUN_PAGE, true);
+      }
+      await runs.refresh();
+    });
 </script>
 
 <svelte:head>
@@ -76,8 +65,8 @@
       >
         <input type="hidden" name="id" value={data.sandbox.id} />
         <input type="hidden" name="run" value={run.id} />
-        <button type="submit" disabled={busy !== undefined}>
-          {busy === "stop" ? "Stopping…" : "Stop"}
+        <button type="submit" disabled={form.busy !== undefined}>
+          {form.busy === "stop" ? "Stopping…" : "Stop"}
         </button>
       </form>
     {:else}
@@ -88,14 +77,14 @@
       >
         <input type="hidden" name="id" value={data.sandbox.id} />
         <input type="hidden" name="run" value={run.id} />
-        <button type="submit" disabled={busy !== undefined}>
-          {busy === "rerun" ? "Starting…" : "Run again"}
+        <button type="submit" disabled={form.busy !== undefined}>
+          {form.busy === "rerun" ? "Starting…" : "Run again"}
         </button>
       </form>
     {/if}
   </div>
-  {#if message !== ""}
-    <p class="error">{message}</p>
+  {#if form.message !== ""}
+    <p class="error">{form.message}</p>
   {/if}
 
   {#key run.id}

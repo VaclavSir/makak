@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 
 import type { Config } from "./config.ts";
+import { createShared } from "./shared.ts";
+import type { Shared } from "./shared.ts";
 import type { Run, Runs, Sandbox } from "./tools/index.ts";
 
 // What can be run in a sandbox, and running it: commands configured for its
@@ -117,51 +119,37 @@ export const createSandboxRuns = ({
   projects: Config["runs"]["projects"];
   runs: Runs;
 }): SandboxRuns => {
-  // Each running sandbox's active runs, by sandbox id. `at` is when the
-  // answer came; undefined while the sandbox is still being asked, which is
-  // always shared, so polling never stacks up `sbx exec`s.
-  const activity = new Map<
-    string,
-    { at: number | undefined; runs: Promise<ActiveRun[]> }
-  >();
+  // Each running sandbox's active runs, by sandbox id.
+  const activity = new Map<string, Shared<ActiveRun[]>>();
+
+  const activityOf = (sandbox: Sandbox) => {
+    let shared = activity.get(sandbox.id);
+    if (shared === undefined) {
+      shared = createShared(
+        async () => activeOf(await runs.list(sandbox.name)),
+        { now: () => now().getTime(), ttlMs: activeTtlMs }
+      );
+      activity.set(sandbox.id, shared);
+    }
+    return shared;
+  };
 
   const remember = (sandbox: Sandbox, listed: Run[]) => {
-    activity.set(sandbox.id, {
-      at: now().getTime(),
-      runs: Promise.resolve(activeOf(listed)),
-    });
+    activityOf(sandbox).set(activeOf(listed));
   };
 
   // A run started or stopped from here shows at the next poll.
   const forget = (sandbox: Sandbox) => {
-    activity.delete(sandbox.id);
+    activity.get(sandbox.id)?.forget();
   };
 
   const activeIn = async (
     sandbox: Sandbox
   ): Promise<ActiveRun[] | undefined> => {
-    let entry = activity.get(sandbox.id);
-    if (
-      entry === undefined ||
-      (entry.at !== undefined && now().getTime() - entry.at >= activeTtlMs)
-    ) {
-      const asking = {
-        at: undefined as number | undefined,
-        runs: (async () => activeOf(await runs.list(sandbox.name)))(),
-      };
-      entry = asking;
-      activity.set(sandbox.id, asking);
-    }
-    const asked = entry;
     try {
-      const value = await asked.runs;
-      asked.at ??= now().getTime();
-      return value;
+      return await activityOf(sandbox).get();
     } catch {
-      // Not cached, so the next poll asks again.
-      if (activity.get(sandbox.id) === asked) {
-        activity.delete(sandbox.id);
-      }
+      // Left out; the next poll asks again.
     }
   };
 

@@ -1,4 +1,5 @@
 import { settled } from "./promises.ts";
+import { createShared } from "./shared.ts";
 import type { Sandbox, Sbx } from "./tools/index.ts";
 
 export interface Sandboxes {
@@ -38,78 +39,32 @@ export const createSandboxes = (
   sbx: Pick<Sbx, "list">,
   { maxStaleMs = 30_000, now = Date.now, ttlMs = 2000 }: SandboxesOptions = {}
 ): Sandboxes => {
-  // `at` is when the listing finished; undefined while `sbx` is still running.
-  let cached:
-    | { at: number | undefined; sandboxes: Promise<Sandbox[]> }
-    | undefined;
-  // The last listing that succeeded, for `recent`.
-  let last: { at: number; sandboxes: Sandbox[] } | undefined;
-
   const fetchSorted = async () => {
     const sandboxes = await sbx.list();
     return sandboxes.toSorted(byName);
   };
-
-  const settle = async (entry: NonNullable<typeof cached>) => {
-    try {
-      const sandboxes = await entry.sandboxes;
-      entry.at = now();
-      // A listing dropped by `changed` may predate the change.
-      if (cached === entry) {
-        last = { at: entry.at, sandboxes };
-      }
-    } catch {
-      // The callers see the failure; this only stops it being reused.
-      if (cached === entry) {
-        cached = undefined;
-      }
-    }
-  };
-
-  // A listing in progress is always shared, however slow `sbx` is, so
-  // polling never stacks up `sbx` processes.
-  const isFresh = (entry: NonNullable<typeof cached>) =>
-    entry.at === undefined || now() - entry.at < ttlMs;
-
-  const list = () => {
-    if (cached === undefined || !isFresh(cached)) {
-      const entry = { at: undefined, sandboxes: fetchSorted() };
-      cached = entry;
-      settle(entry);
-    }
-    return cached.sandboxes;
-  };
+  const listing = createShared(fetchSorted, { now, ttlMs });
 
   const recent = () => {
-    const answer = last;
+    const answer = listing.last();
     // Starts a new listing if this one has expired; its failure is reported
     // to whoever waits for it, so not here.
-    const listing = list();
+    const sandboxes = listing.get();
     if (answer === undefined || now() - answer.at >= maxStaleMs) {
-      return listing;
+      return sandboxes;
     }
-    void settled(listing);
-    return Promise.resolve(answer.sandboxes);
+    void settled(sandboxes);
+    return Promise.resolve(answer.value);
   };
 
   return {
-    changed: () => {
-      cached = undefined;
-      last = undefined;
-    },
+    changed: listing.forget,
     find: async (name) => {
-      const sandboxes = await list();
+      const sandboxes = await listing.get();
       return sandboxes.find((sandbox) => sandbox.name === name);
     },
-    invalidate: () => {
-      // A listing still running may predate the change, but it is shared,
-      // so dropping it would only start a second `sbx ls`.
-      if (cached?.at !== undefined) {
-        cached = undefined;
-      }
-      last = undefined;
-    },
-    list,
+    invalidate: listing.expire,
+    list: listing.get,
     recent,
   };
 };

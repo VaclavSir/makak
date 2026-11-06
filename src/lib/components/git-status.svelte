@@ -1,15 +1,13 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SubmitFunction } from "$app/forms";
   import { explain, summarize } from "#lib/git-compare.ts";
   import type { Comparison, GitStatus } from "#server/sandbox-git.ts";
+  import { idle, submitting } from "#lib/submit.ts";
 
   let { git, id }: { git: GitStatus; id: string } = $props();
 
   // What is running: the action and its branch, e.g. "push:main".
-  let busy = $state<string | undefined>();
-  let message = $state("");
-  let failed = $state(false);
+  const form = $state(idle<string>());
   // The branch whose force push is waiting for confirmation.
   let forcing = $state<string | undefined>();
 
@@ -20,34 +18,22 @@
     comparison === undefined ||
     (comparison.ahead > 0 && comparison.behind === 0);
 
-  const submit =
-    (what: string): SubmitFunction =>
-    () => {
-      busy = what;
-      message = "";
-      return async ({ result, update }) => {
-        busy = undefined;
-        if (result.type === "failure") {
-          failed = true;
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        failed = false;
-        forcing = undefined;
-        if (result.type === "success") {
-          message = String(result.data?.git ?? "");
-        }
-        await update({ reset: false });
-      };
-    };
+  const submit = (what: string) =>
+    submitting(form, what, async ({ result, update }) => {
+      forcing = undefined;
+      if (result.type === "success") {
+        form.message = String(result.data?.git ?? "");
+      }
+      await update({ reset: false });
+    });
 </script>
 
 <div class="summary">
   <span class="muted">Synced every minute while it runs.</span>
   <form method="POST" action="?/refresh" use:enhance={submit("refresh")}>
     <input type="hidden" name="id" value={id} />
-    <button type="submit" disabled={busy !== undefined}>
-      {busy === "refresh" ? "Refreshing…" : "Refresh"}
+    <button type="submit" disabled={form.busy !== undefined}>
+      {form.busy === "refresh" ? "Refreshing…" : "Refresh"}
     </button>
   </form>
 </div>
@@ -106,8 +92,10 @@
                   <input type="hidden" name="id" value={id} />
                   <input type="hidden" name="branch" value={branch.name} />
                   <input type="hidden" name="sha" value={branch.sha} />
-                  <button type="submit" disabled={busy !== undefined}>
-                    {busy === `host:${branch.name}` ? "Bringing…" : "To host"}
+                  <button type="submit" disabled={form.busy !== undefined}>
+                    {form.busy === `host:${branch.name}`
+                      ? "Bringing…"
+                      : "To host"}
                   </button>
                 </form>
               {/if}
@@ -120,14 +108,14 @@
                   <input type="hidden" name="id" value={id} />
                   <input type="hidden" name="branch" value={branch.name} />
                   <input type="hidden" name="sha" value={branch.sha} />
-                  <button type="submit" disabled={busy !== undefined}>
-                    {busy === `push:${branch.name}` ? "Pushing…" : "Push"}
+                  <button type="submit" disabled={form.busy !== undefined}>
+                    {form.busy === `push:${branch.name}` ? "Pushing…" : "Push"}
                   </button>
                 </form>
               {:else if branch.origin !== undefined && branch.origin.behind > 0}
                 <button
                   type="button"
-                  disabled={busy !== undefined || forcing !== undefined}
+                  disabled={form.busy !== undefined || forcing !== undefined}
                   onclick={() => {
                     forcing = branch.name;
                   }}>Force push…</button
@@ -160,15 +148,15 @@
                 <button
                   type="submit"
                   class="danger"
-                  disabled={busy !== undefined}
+                  disabled={form.busy !== undefined}
                 >
-                  {busy === `force:${branch.name}`
+                  {form.busy === `force:${branch.name}`
                     ? "Pushing…"
                     : "Force push with lease"}
                 </button>
                 <button
                   type="button"
-                  disabled={busy !== undefined}
+                  disabled={form.busy !== undefined}
                   onclick={() => {
                     forcing = undefined;
                   }}>Cancel</button
@@ -182,8 +170,10 @@
   </table>
 {/if}
 
-{#if message !== ""}
-  <p class={failed ? "error" : "muted"} aria-live="polite">{message}</p>
+{#if form.message !== ""}
+  <p class={form.failed ? "error" : "muted"} aria-live="polite">
+    {form.message}
+  </p>
 {/if}
 
 <style>

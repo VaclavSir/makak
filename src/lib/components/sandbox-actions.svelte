@@ -2,8 +2,8 @@
   import { enhance } from "$app/forms";
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import type { SubmitFunction } from "$app/forms";
   import { SANDBOX_PAGE } from "#lib/dependencies.ts";
+  import { idle, submitting } from "#lib/submit.ts";
   import type { Work } from "#server/sandbox-git.ts";
 
   import PlanReview from "./plan-review.svelte";
@@ -40,37 +40,29 @@
     status: string;
   } = $props();
 
-  let busy = $state<"planning" | "starting" | "stopping" | undefined>();
-  let message = $state("");
+  const form = $state(idle<"planning" | "starting" | "stopping">());
   let plan = $state<Plan | undefined>();
   let removing = $state(false);
-  let removeBusy = $state(false);
-  let removeMessage = $state("");
+  const removeForm = $state(idle());
 
   const running = $derived(status === "running");
   // The overview's actions, also from a run's tab.
   const base = $derived(resolve("/sandboxes/[name]", { name }));
 
   /** Submits a form, keeping its outcome here rather than in the page. */
-  const submit =
-    (what: NonNullable<typeof busy>): SubmitFunction =>
-    () => {
-      busy = what;
-      message = "";
-      return async ({ result, update }) => {
-        busy = undefined;
-        if (result.type === "failure") {
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        if (result.type === "success" && result.data?.plan !== undefined) {
-          plan = result.data.plan as Plan;
-          return;
-        }
-        // The actions belong to the overview; stay on the page they came from.
-        await update({ navigate: false });
-      };
-    };
+  const submit = (what: "planning" | "starting" | "stopping") =>
+    submitting(form, what, async ({ result, update }) => {
+      if (result.type === "success" && result.data?.plan !== undefined) {
+        plan = result.data.plan as Plan;
+        return;
+      }
+      // The actions belong to the overview; stay on the page they came from.
+      await update({ navigate: false });
+    });
+
+  const remove = submitting(removeForm, true, async ({ update }) => {
+    await update();
+  });
 </script>
 
 <div class="actions">
@@ -81,8 +73,8 @@
       use:enhance={submit("stopping")}
     >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" disabled={busy !== undefined}>
-        {busy === "stopping" ? "Stopping…" : "Stop"}
+      <button type="submit" disabled={form.busy !== undefined}>
+        {form.busy === "stopping" ? "Stopping…" : "Stop"}
       </button>
     </form>
   {:else if managed && envProblem === undefined}
@@ -92,8 +84,11 @@
       use:enhance={submit("planning")}
     >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" disabled={busy !== undefined || plan !== undefined}>
-        {busy === "planning" ? "Planning…" : "Start…"}
+      <button
+        type="submit"
+        disabled={form.busy !== undefined || plan !== undefined}
+      >
+        {form.busy === "planning" ? "Planning…" : "Start…"}
       </button>
     </form>
   {:else}
@@ -103,8 +98,8 @@
       use:enhance={submit("starting")}
     >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" disabled={busy !== undefined}>
-        {busy === "starting" ? "Starting…" : "Start"}
+      <button type="submit" disabled={form.busy !== undefined}>
+        {form.busy === "starting" ? "Starting…" : "Start"}
       </button>
     </form>
   {/if}
@@ -125,8 +120,8 @@
     }}>Remove…</button
   >
 </div>
-{#if message !== ""}
-  <p class="error">{message}</p>
+{#if form.message !== ""}
+  <p class="error">{form.message}</p>
 {/if}
 
 {#if plan !== undefined}
@@ -210,22 +205,7 @@
         <code>preRemove</code> commands run.
       </p>
     {/if}
-    <form
-      method="POST"
-      action={`${base}?/remove`}
-      use:enhance={() => {
-        removeBusy = true;
-        removeMessage = "";
-        return async ({ result, update }) => {
-          removeBusy = false;
-          if (result.type === "failure") {
-            removeMessage = String(result.data?.message ?? "It didn't work.");
-            return;
-          }
-          await update();
-        };
-      }}
-    >
+    <form method="POST" action={`${base}?/remove`} use:enhance={remove}>
       <input type="hidden" name="id" value={id} />
       <input
         type="hidden"
@@ -233,19 +213,23 @@
         value={JSON.stringify(removal.hashes)}
       />
       <div class="buttons">
-        <button type="submit" class="danger" disabled={removeBusy}>
-          {removeBusy ? "Removing…" : "Remove for good"}
+        <button
+          type="submit"
+          class="danger"
+          disabled={removeForm.busy !== undefined}
+        >
+          {removeForm.busy === undefined ? "Remove for good" : "Removing…"}
         </button>
         <button
           type="button"
-          disabled={removeBusy}
+          disabled={removeForm.busy !== undefined}
           onclick={() => {
             removing = false;
           }}>Cancel</button
         >
       </div>
-      {#if removeMessage !== ""}
-        <p class="error">{removeMessage}</p>
+      {#if removeForm.message !== ""}
+        <p class="error">{removeForm.message}</p>
       {/if}
     </form>
   </section>

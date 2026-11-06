@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { idle, submitting } from "#lib/submit.ts";
 
   let {
     action,
@@ -23,8 +24,14 @@
     warnings: string[];
   } = $props();
 
-  let busy = $state(false);
-  let message = $state("");
+  const form = $state(idle());
+  const busy = $derived(form.busy !== undefined);
+
+  const submit = submitting(form, true, async ({ update }) => {
+    onapplied?.();
+    // Its action may belong to another page; stay on this one.
+    await update({ navigate: false });
+  });
 </script>
 
 <section class="plan">
@@ -44,24 +51,7 @@
     </ul>
   {/if}
 
-  <form
-    method="POST"
-    {action}
-    use:enhance={() => {
-      busy = true;
-      message = "";
-      return async ({ result, update }) => {
-        busy = false;
-        if (result.type === "failure") {
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        onapplied?.();
-        // Its action may belong to another page; stay on this one.
-        await update({ navigate: false });
-      };
-    }}
-  >
+  <form method="POST" {action} use:enhance={submit}>
     {#each Object.entries(fields) as [name, value] (name)}
       <input type="hidden" {name} {value} />
     {/each}
@@ -71,8 +61,8 @@
       </button>
       <button type="button" disabled={busy} onclick={oncancel}>Cancel</button>
     </div>
-    {#if message !== ""}
-      <p class="error">{message}</p>
+    {#if form.message !== ""}
+      <p class="error">{form.message}</p>
     {/if}
   </form>
 </section>

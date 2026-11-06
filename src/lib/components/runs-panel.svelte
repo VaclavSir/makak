@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SubmitFunction } from "$app/forms";
   import type { RunsView } from "#lib/runs-context.ts";
+  import { idle, submitting } from "#lib/submit.ts";
 
   // What can be run in a sandbox. A run started here opens in its own tab.
 
@@ -19,27 +19,16 @@
     workspaces: string[];
   } = $props();
 
-  let busy = $state<string | undefined>();
-  let message = $state("");
+  const form = $state(idle<string>());
   let command = $state("");
   // svelte-ignore state_referenced_locally
   let cwd = $state(workspaces[0] ?? "");
   let prompt = $state("");
 
-  const submit =
-    (what: string): SubmitFunction =>
-    () => {
-      busy = what;
-      message = "";
-      return async ({ result, update }) => {
-        busy = undefined;
-        if (result.type === "failure") {
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        await update({ reset: false });
-      };
-    };
+  const submit = (what: string) =>
+    submitting(form, what, async ({ update }) => {
+      await update({ reset: false });
+    });
 </script>
 
 {#if !running}
@@ -66,8 +55,8 @@
           <button
             type="submit"
             title={configured.command}
-            disabled={busy !== undefined}
-            >{busy === configured.label
+            disabled={form.busy !== undefined}
+            >{form.busy === configured.label
               ? "Starting…"
               : configured.label}</button
           >
@@ -93,8 +82,8 @@
           {/each}
         </select>
       </label>
-      <button type="submit" disabled={busy !== undefined}>
-        {busy === "script" ? "Starting…" : "Run"}
+      <button type="submit" disabled={form.busy !== undefined}>
+        {form.busy === "script" ? "Starting…" : "Run"}
       </button>
     </form>
   {/if}
@@ -127,9 +116,9 @@
     {/if}
     <button
       type="submit"
-      disabled={busy !== undefined || command.trim() === ""}
+      disabled={form.busy !== undefined || command.trim() === ""}
     >
-      {busy === "command" ? "Starting…" : "Run"}
+      {form.busy === "command" ? "Starting…" : "Run"}
     </button>
   </form>
 
@@ -151,15 +140,15 @@
         bind:value={prompt}></textarea>
       <button
         type="submit"
-        disabled={busy !== undefined || prompt.trim() === ""}
+        disabled={form.busy !== undefined || prompt.trim() === ""}
       >
-        {busy === "prompt" ? "Starting…" : `Ask ${agent}`}
+        {form.busy === "prompt" ? "Starting…" : `Ask ${agent}`}
       </button>
     </form>
   {/if}
 
-  {#if message !== ""}
-    <p class="error">{message}</p>
+  {#if form.message !== ""}
+    <p class="error">{form.message}</p>
   {/if}
 {/if}
 

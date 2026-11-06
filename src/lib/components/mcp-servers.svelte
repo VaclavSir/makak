@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SubmitFunction } from "$app/forms";
   import type { McpChoice } from "#lib/mcp.ts";
+  import { idle, submitting } from "#lib/submit.ts";
 
   let {
     choices,
@@ -20,9 +20,7 @@
   } = $props();
 
   // What is running: the action and its server, e.g. "load:gitlab".
-  let busy = $state<string | undefined>();
-  let message = $state("");
-  let failed = $state(false);
+  const form = $state(idle<string>());
 
   // Loaded servers come first; one no longer configured is listed too.
   const rows = $derived([
@@ -39,25 +37,13 @@
       })),
   ]);
 
-  const submit =
-    (what: string): SubmitFunction =>
-    () => {
-      busy = what;
-      message = "";
-      return async ({ result, update }) => {
-        busy = undefined;
-        if (result.type === "failure") {
-          failed = true;
-          message = String(result.data?.message ?? "It didn't work.");
-          return;
-        }
-        failed = false;
-        if (result.type === "success") {
-          message = String(result.data?.mcp ?? "");
-        }
-        await update({ reset: false });
-      };
-    };
+  const submit = (what: string) =>
+    submitting(form, what, async ({ result, update }) => {
+      if (result.type === "success") {
+        form.message = String(result.data?.mcp ?? "");
+      }
+      await update({ reset: false });
+    });
 </script>
 
 <p class="muted">
@@ -84,9 +70,11 @@
           <input type="hidden" name="server" value={row.name} />
           <button
             type="submit"
-            disabled={!running || busy !== undefined}
+            disabled={!running || form.busy !== undefined}
             title="The agent loses its tools"
-            >{busy === `unload:${row.name}` ? "Unloading…" : "Unload"}</button
+            >{form.busy === `unload:${row.name}`
+              ? "Unloading…"
+              : "Unload"}</button
           >
         </form>
       {:else}
@@ -101,9 +89,9 @@
           <button
             type="submit"
             disabled={!running ||
-              busy !== undefined ||
+              form.busy !== undefined ||
               row.problem !== undefined}
-            >{busy === `load:${row.name}` ? "Loading…" : "Load"}</button
+            >{form.busy === `load:${row.name}` ? "Loading…" : "Load"}</button
           >
         </form>
       {/if}
@@ -114,17 +102,15 @@
   {/each}
 </ul>
 
-{#if message !== ""}
-  <p class={failed ? "error" : "muted"} aria-live="polite">{message}</p>
+{#if form.message !== ""}
+  <p class={form.failed ? "error" : "muted"} aria-live="polite">
+    {form.message}
+  </p>
 {/if}
 
 <style>
   .muted {
     color: var(--muted);
-  }
-
-  .error {
-    color: var(--error-text);
   }
 
   .warning {

@@ -6,6 +6,7 @@
   import McpArguments from "#lib/components/mcp-arguments.svelte";
   import { MCP } from "#lib/dependencies.ts";
   import { formatTime } from "#lib/format.ts";
+  import { failureMessage } from "#lib/submit.ts";
   import type { Approval } from "#server/mcp/approvals.ts";
 
   // The tool calls waiting for the user, oldest first. Shown in the dialog
@@ -58,7 +59,7 @@
       return async ({ result }) => {
         busy = undefined;
         if (result.type === "failure") {
-          message = String(result.data?.message ?? "It didn't work.");
+          message = failureMessage(result);
         } else if (result.type === "error") {
           message = String(result.error);
         }
@@ -136,13 +137,6 @@
 <style>
   .hint {
     color: var(--muted);
-  }
-
-  .error {
-    border-radius: 6px;
-    background: var(--error-bg);
-    padding: 0.5rem 0.75rem;
-    color: var(--error-text);
   }
 
   .queue {
