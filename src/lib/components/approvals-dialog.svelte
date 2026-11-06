@@ -55,7 +55,7 @@
     margin: 4rem auto auto;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--bg);
+    background: var(--surface);
     color: var(--text);
     padding: 0.75rem 1rem 1rem;
   }
