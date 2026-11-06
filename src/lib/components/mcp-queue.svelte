@@ -16,7 +16,10 @@
     ondecided,
     pending,
   }: {
-    /** Called once a decision went through and the queue was reloaded. */
+    /**
+     * Called once a decision or dismissal went through and the queue was
+     * reloaded.
+     */
     ondecided?: () => void;
     pending: Approval[];
   } = $props();
@@ -25,6 +28,27 @@
   let message = $state("");
 
   const action = `${resolve("/mcp-panel/approvals")}?/decide`;
+  const dismissAction = `${resolve("/mcp-panel/approvals")}?/dismiss`;
+
+  /** Why no call waits for a request: a few words, and the whole story. */
+  const stoppedNote = (stopped: Approval["stopped"]) => {
+    if (stopped === "held") {
+      return {
+        long: "The hold ended, and the agent was told to make the same call again. Your decision applies to that call.",
+        short: "Hold ended; the agent will ask again",
+      };
+    }
+    if (stopped === "gone") {
+      return {
+        long: "The call was dropped before the hold ended: the agent gave up, and may never call again, e.g. a one-shot prompt that has ended. Your decision applies to its next call with the same arguments, if one comes; dismiss it if none will.",
+        short: "The agent gave up waiting",
+      };
+    }
+    return {
+      long: "Your decision applies to its next call with the same arguments.",
+      short: "The agent stopped waiting",
+    };
+  };
 
   const decide =
     (id: string): SubmitFunction =>
@@ -63,10 +87,11 @@
           </span>
         </div>
         {#if !request.waiting}
-          <p class="hint">
-            The agent stopped waiting. Your decision applies to its next call
-            with the same arguments.
-          </p>
+          {@const note = stoppedNote(request.stopped)}
+          <details class="hint stopped">
+            <summary>{note.short}</summary>
+            {note.long}
+          </details>
         {/if}
         <McpArguments args={request.arguments} />
         <form method="POST" {action} use:enhance={decide(request.id)}>
@@ -93,6 +118,15 @@
             value="deny"
             disabled={busy !== undefined}>Deny</button
           >
+          {#if !request.waiting}
+            <button
+              type="submit"
+              formaction={dismissAction}
+              disabled={busy !== undefined}
+              title="Take it off the queue without allowing or denying it"
+              >Dismiss</button
+            >
+          {/if}
         </form>
       </li>
     {/each}
@@ -129,12 +163,13 @@
     padding: 0.75rem 1rem;
   }
 
-  .queue p {
-    margin: 0;
-  }
-
   .tool {
     font-weight: 600;
+  }
+
+  .stopped summary {
+    width: fit-content;
+    cursor: pointer;
   }
 
   form {

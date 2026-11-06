@@ -38,4 +38,19 @@ export const actions: Actions = {
     approvals.decide(id, decision === "deny" ? "denied" : "approved");
     return { decided: id };
   },
+
+  dismiss: async ({ request }) => {
+    const form = await request.formData();
+    const id = field(form, "id");
+    if (id === undefined) {
+      return fail(400, INCOMPLETE);
+    }
+    if (!getPanelContext().mcp.approvals.dismiss(id)) {
+      return fail(409, {
+        message:
+          "That request can't be dismissed: a call waits for it again, it was decided already, or the Panel restarted.",
+      });
+    }
+    return { dismissed: id };
+  },
 };

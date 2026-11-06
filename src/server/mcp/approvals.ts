@@ -4,7 +4,8 @@ import { setTimeout as delay } from "node:timers/promises";
 // Tool calls waiting for the user. A call is held for a while; if nobody
 // decides by then, the agent is told to ask again, and the request stays in
 // the queue. Deciding it then decides the agent's next identical call.
-// Kept in memory: restarting the Panel empties the queue.
+// Dismissing it takes it off the queue undecided, for an agent that won't
+// call again. Kept in memory: restarting the Panel empties the queue.
 
 /** How long a decision on a call that stopped waiting is kept for its retry. */
 export const DECIDED_TTL_MS = 24 * 60 * 60_000;
@@ -20,6 +21,11 @@ export interface Approval extends Call {
   requestedAt: string;
   /** Whether a call is held open for it right now. */
   waiting: boolean;
+  /**
+   * How its last call stopped waiting, while none waits: the hold ended
+   * and the agent was told to ask again, or the caller hung up.
+   */
+  stopped?: "gone" | "held";
 }
 
 /**
@@ -45,6 +51,11 @@ export interface Approvals {
   pending: () => Approval[];
   /** False when there is no such undecided request. */
   decide: (id: string, decision: "approved" | "denied") => boolean;
+  /**
+   * Forgets an undecided request no call waits for, so no later call gets
+   * a decision from it. False when there is no such request.
+   */
+  dismiss: (id: string) => boolean;
 }
 
 interface Entry extends Call {
@@ -52,6 +63,7 @@ interface Entry extends Call {
   id: string;
   key: string;
   requestedAt: Date;
+  stopped?: "gone" | "held";
   waiters: Set<(outcome: Outcome) => void>;
 }
 
@@ -101,13 +113,17 @@ export const createApprovals = ({
       signal ? [signal, done.signal] : [done.signal]
     );
     try {
-      return await Promise.race([
+      const outcome = await Promise.race([
         decided.promise,
         // Rejects when the caller hangs up, or once decided.
         delay(holdMs, "held" as const, { signal: until }).catch(
           () => "gone" as const
         ),
       ]);
+      if (outcome === "gone" || outcome === "held") {
+        entry.stopped = outcome;
+      }
+      return outcome;
     } finally {
       done.abort();
       entry.waiters.delete(decided.resolve);
@@ -152,6 +168,16 @@ export const createApprovals = ({
       return true;
     },
 
+    dismiss: (id) => {
+      purge();
+      const entry = entries.get(id);
+      if (entry === undefined || entry.decided || entry.waiters.size > 0) {
+        return false;
+      }
+      entries.delete(id);
+      return true;
+    },
+
     pending: () => {
       purge();
       return [...entries.values()]
@@ -162,6 +188,9 @@ export const createApprovals = ({
           id: entry.id,
           requestedAt: entry.requestedAt.toISOString(),
           server: entry.server,
+          ...(entry.waiters.size === 0 && entry.stopped !== undefined
+            ? { stopped: entry.stopped }
+            : {}),
           tool: entry.tool,
           waiting: entry.waiters.size > 0,
         }));

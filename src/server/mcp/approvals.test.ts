@@ -43,7 +43,7 @@ describe(createApprovals, () => {
     const held = await approvals.ask(CALL, SHORT);
     expect(held.outcome).toBe("held");
     expect(approvals.pending()).toMatchObject([
-      { id: held.id, waiting: false },
+      { id: held.id, stopped: "held", waiting: false },
     ]);
   });
 
@@ -98,7 +98,47 @@ describe(createApprovals, () => {
     await tick();
     controller.abort();
     await expect(call).resolves.toMatchObject({ outcome: "gone" });
-    expect(approvals.pending()).toMatchObject([{ waiting: false }]);
+    expect(approvals.pending()).toMatchObject([
+      { stopped: "gone", waiting: false },
+    ]);
+  });
+
+  it("says nothing of how a call stopped while one waits again", async () => {
+    const approvals = createApprovals();
+    await approvals.ask(CALL, SHORT);
+    const retry = approvals.ask(CALL, HOLD);
+    await tick();
+    const [request] = approvals.pending();
+    expect(request).toMatchObject({ waiting: true });
+    expect(request).not.toHaveProperty("stopped");
+    approvals.decide(request?.id ?? "", "denied");
+    await retry;
+  });
+
+  it("dismisses a request nobody waits for, so its retry asks again", async () => {
+    const approvals = createApprovals();
+    const held = await approvals.ask(CALL, SHORT);
+    expect(approvals.dismiss(held.id)).toBeTruthy();
+    expect(approvals.pending()).toStrictEqual([]);
+    expect(approvals.decide(held.id, "approved")).toBeFalsy();
+    const retry = await approvals.ask(CALL, SHORT);
+    expect(retry).toMatchObject({ earlier: false, outcome: "held" });
+    expect(retry.id).not.toBe(held.id);
+  });
+
+  it("refuses to dismiss a request a call waits for, or one decided", async () => {
+    const approvals = createApprovals();
+    const call = approvals.ask(CALL, HOLD);
+    await tick();
+    const id = approvals.pending()[0]?.id ?? "";
+    expect(approvals.dismiss(id)).toBeFalsy();
+    approvals.decide(id, "approved");
+    await call;
+    expect(approvals.dismiss(id)).toBeFalsy();
+    const held = await approvals.ask({ ...CALL, tool: "delete_note" }, SHORT);
+    approvals.decide(held.id, "approved");
+    expect(approvals.dismiss(held.id)).toBeFalsy();
+    expect(approvals.dismiss("nope")).toBeFalsy();
   });
 
   it("forgets a decision nobody came back for", async () => {
