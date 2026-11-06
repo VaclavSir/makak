@@ -122,7 +122,7 @@
     onclick={() => {
       removing = true;
       // What it would lose, as it is now, not as the page loaded.
-      void invalidate(SANDBOX_PAGE);
+      void invalidate(SANDBOX_PAGE, true);
     }}>Remove…</button
   >
 </div>

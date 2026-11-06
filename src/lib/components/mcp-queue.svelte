@@ -31,7 +31,7 @@
         } else if (result.type === "error") {
           message = String(result.error);
         }
-        await invalidate(MCP);
+        await invalidate(MCP, true);
       };
     };
 </script>

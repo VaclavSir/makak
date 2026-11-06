@@ -42,7 +42,7 @@
         // Stay here: the actions belong to the overview.
         await update({ navigate: false, refreshAll: false });
         if (rerun === undefined) {
-          await invalidate(RUN_PAGE);
+          await invalidate(RUN_PAGE, true);
         }
         await runs.refresh();
       };
@@ -104,7 +104,7 @@
       logSize={run.logSize}
       name={data.sandbox.name}
       onended={() => {
-        void invalidate(RUN_PAGE);
+        void invalidate(RUN_PAGE, true);
         void runs.refresh();
       }}
       rows={data.size.rows}

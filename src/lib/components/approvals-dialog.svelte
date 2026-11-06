@@ -48,9 +48,11 @@
 </dialog>
 
 <style>
+  /* Near the top, so it doesn't move as calls come and go. */
   dialog {
     width: min(56rem, calc(100vw - 2rem));
-    max-height: calc(100vh - 4rem);
+    max-height: calc(100vh - 6rem);
+    margin: 4rem auto auto;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg);

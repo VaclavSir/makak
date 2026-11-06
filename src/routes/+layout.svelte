@@ -50,8 +50,8 @@
 
   const refresh = () => {
     if (document.visibilityState === "visible") {
-      invalidate(SANDBOXES);
-      invalidate(MCP);
+      invalidate(SANDBOXES, true);
+      invalidate(MCP, true);
     }
   };
 

@@ -43,7 +43,7 @@
       This sandbox was removed, and a new one now has the same name. What is
       shown below belongs to the old one.
     </p>
-    <button type="button" onclick={() => invalidate(SANDBOX_PAGE)}>
+    <button type="button" onclick={() => invalidate(SANDBOX_PAGE, true)}>
       Show the new sandbox
     </button>
   </div>
