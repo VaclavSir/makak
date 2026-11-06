@@ -515,7 +515,7 @@ describe(createLifecycle, () => {
         expect.stringContaining("/d is writable"),
       ]);
 
-      await lifecycle.remove(sandbox, "new-one", removal.hashes);
+      await lifecycle.remove(sandbox, removal.hashes);
       expect(calls).toStrictEqual([
         [
           "envRm",
@@ -535,15 +535,6 @@ describe(createLifecycle, () => {
       expect(record.env?.name).toBe("new-one");
     });
 
-    it("needs the name typed to confirm", async () => {
-      const sandbox = await created();
-      const { removal } = await lifecycle.inspect(sandbox);
-      await expect(
-        lifecycle.remove(sandbox, "new-on", removal.hashes)
-      ).rejects.toThrow(/Type the sandbox's name, new-one/u);
-      expect(changes()).toHaveLength(1);
-    });
-
     it("refuses env files that changed since the confirmation was shown", async () => {
       const sandbox = await created();
       const { removal } = await lifecycle.inspect(sandbox);
@@ -552,9 +543,9 @@ describe(createLifecycle, () => {
         `${BASE}\nlifecycle: { preRemove: [{ command: "rm -rf ~" }] }\n`
       );
 
-      await expect(
-        lifecycle.remove(sandbox, "new-one", removal.hashes)
-      ).rejects.toThrow(/changed since/u);
+      await expect(lifecycle.remove(sandbox, removal.hashes)).rejects.toThrow(
+        /changed since/u
+      );
     });
 
     it("falls back to sbx rm when the env files are gone, if the confirmation said so", async () => {
@@ -563,13 +554,13 @@ describe(createLifecycle, () => {
       await rm(basePath());
 
       await expect(
-        lifecycle.remove(sandbox, "new-one", before.removal.hashes)
+        lifecycle.remove(sandbox, before.removal.hashes)
       ).rejects.toThrow(/can't be read any more/u);
 
       const { envProblem, removal } = await lifecycle.inspect(sandbox);
       expect(envProblem).toContain("no longer exists");
       expect(removal).toMatchObject({ hashes: [], method: "rm" });
-      await lifecycle.remove(sandbox, "new-one", removal.hashes);
+      await lifecycle.remove(sandbox, removal.hashes);
       expect(changes().at(-1)).toStrictEqual(["rm", "new-one"]);
     });
 
@@ -578,9 +569,7 @@ describe(createLifecycle, () => {
       const { removal } = await lifecycle.inspect(sandbox);
       await writeFile(basePath(), `${BASE}\n# edited\n`);
 
-      await expect(
-        lifecycle.remove(sandbox, "new-one", removal.hashes)
-      ).rejects.toThrow(
+      await expect(lifecycle.remove(sandbox, removal.hashes)).rejects.toThrow(
         "The env files changed since this page was loaded (00-base.sbxenv.yaml). Reload the page to see what removing it runs now."
       );
     });
@@ -602,7 +591,7 @@ describe(createLifecycle, () => {
         store: failingStore,
       });
 
-      await lifecycle.remove(target, "old-experiment", []);
+      await lifecycle.remove(target, []);
       expect(changes()).toStrictEqual([["rm", "old-experiment"]]);
     });
 
@@ -617,7 +606,7 @@ describe(createLifecycle, () => {
         const { removal } = await lifecycle.inspect(sandbox);
         expect(removal.work).toStrictEqual(sandboxGit.state.work);
 
-        await lifecycle.remove(sandbox, "feature-a", []);
+        await lifecycle.remove(sandbox, []);
         expect(sandboxGit.synced).toStrictEqual(["feature-a"]);
         expect(changes()).toStrictEqual([["rm", "feature-a"]]);
       });
@@ -634,7 +623,7 @@ describe(createLifecycle, () => {
           sbx,
           store,
         });
-        await lifecycle.remove(sandbox, "feature-a", []);
+        await lifecycle.remove(sandbox, []);
         expect(changes()).toStrictEqual([["rm", "feature-a"]]);
       });
     });
@@ -652,7 +641,7 @@ describe(createLifecycle, () => {
         work: undefined,
       });
 
-      await lifecycle.remove(target, "old-experiment", []);
+      await lifecycle.remove(target, []);
       expect(changes()).toStrictEqual([["rm", "old-experiment"]]);
       await expect(store.list()).resolves.toStrictEqual({});
     });

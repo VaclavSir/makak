@@ -144,16 +144,11 @@ export const actions: Actions = {
     const form = await request.formData();
     const target = targetOf(form, params.name);
     const hashes = hashesOf(form);
-    const confirmation = form.get("confirmation");
-    if (
-      target === undefined ||
-      hashes === undefined ||
-      typeof confirmation !== "string"
-    ) {
+    if (target === undefined || hashes === undefined) {
       return fail(400, INCOMPLETE);
     }
     const result = await attempt(() =>
-      getPanelContext().lifecycle.remove(target, confirmation.trim(), hashes)
+      getPanelContext().lifecycle.remove(target, hashes)
     );
     if (!result.ok) {
       return result.failure;

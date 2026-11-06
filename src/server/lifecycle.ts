@@ -128,14 +128,10 @@ export interface Lifecycle {
   /** What the sandbox page shows about how the sandbox is managed. */
   inspect: (sandbox: Sandbox) => Promise<Inspection>;
   /**
-   * `confirmation` must be the sandbox's name. A running sandbox's branches
-   * are copied first, and sbx keeps the copy after removal.
+   * Removes the sandbox once its confirmation was shown. A running sandbox's
+   * branches are copied first, and sbx keeps the copy after removal.
    */
-  remove: (
-    target: Target,
-    confirmation: string,
-    hashes: string[]
-  ) => Promise<void>;
+  remove: (target: Target, hashes: string[]) => Promise<void>;
 }
 
 export interface LifecycleOptions {
@@ -484,13 +480,8 @@ export const createLifecycle = ({
       return plan(specOf(env), files, mergeEnvFiles(files));
     },
 
-    remove: (target, confirmation, hashes) =>
+    remove: (target, hashes) =>
       exclusive(target.name, async () => {
-        if (confirmation !== target.name) {
-          throw new LifecycleError(
-            `Type the sandbox's name, ${target.name}, to confirm.`
-          );
-        }
         const sandbox = await resolve(target);
         // Commits from the last minute, which sbx may not have copied yet.
         await quietly(() => sandboxGit.sync(sandbox));

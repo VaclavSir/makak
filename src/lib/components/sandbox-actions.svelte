@@ -44,7 +44,6 @@
   let message = $state("");
   let plan = $state<Plan | undefined>();
   let removing = $state(false);
-  let confirmation = $state("");
   let removeBusy = $state(false);
   let removeMessage = $state("");
 
@@ -233,21 +232,8 @@
         name="hashes"
         value={JSON.stringify(removal.hashes)}
       />
-      <label>
-        <span>Type <strong>{name}</strong> to confirm</span>
-        <input
-          name="confirmation"
-          autocomplete="off"
-          spellcheck="false"
-          bind:value={confirmation}
-        />
-      </label>
       <div class="buttons">
-        <button
-          type="submit"
-          class="danger"
-          disabled={removeBusy || confirmation.trim() !== name}
-        >
+        <button type="submit" class="danger" disabled={removeBusy}>
           {removeBusy ? "Removing…" : "Remove for good"}
         </button>
         <button
@@ -255,7 +241,6 @@
           disabled={removeBusy}
           onclick={() => {
             removing = false;
-            confirmation = "";
           }}>Cancel</button
         >
       </div>
@@ -318,12 +303,6 @@
 
   .commits {
     list-style: none;
-  }
-
-  .remove label {
-    display: grid;
-    gap: 0.3rem;
-    max-width: 24rem;
   }
 
   .buttons {

@@ -82,7 +82,7 @@ What the Panel knows that `sbx` doesn't, such as notes and how it created a sand
 - **The record.** After `sbx env run` creates a sandbox, the Panel looks up its id and records the absolute file paths and args under it. A sandbox `sbx` created before failing is recorded too, so it can be removed with its env. A managed sandbox's record outlives it, so it can be created again; _Forget_ deletes the record. Removing an unmanaged sandbox deletes its notes, and the confirmation lists them.
 - **Identity.** Every action names the sandbox's id as the page saw it, and is refused when the name now belongs to another sandbox.
 - **One change at a time** per sandbox name, so a double click can't run two creates, or a stop in the middle of a remove.
-- **Removal** needs the name typed in, and the confirmation lists the commits [on no host branch](#git), and everything else lost with the sandbox. It is computed when the confirmation opens. A managed sandbox is removed with `sbx env rm` and its recorded files, and the confirmation lists the `preRemove` host commands that run; when the files are gone, `sbx rm` is used and the confirmation says so.
+- **Removal** asks first, and the confirmation lists the commits [on no host branch](#git), and everything else lost with the sandbox. It is computed when the confirmation opens. A managed sandbox is removed with `sbx env rm` and its recorded files, and the confirmation lists the `preRemove` host commands that run; when the files are gone, `sbx rm` is used and the confirmation says so.
 - **Stopping** copies a running sandbox's branches first, because its git daemon stops with it; see [Git](#git).
 - **Warnings** are derived from the merged env files, with arg references substituted. They are shown and never enforced.
 
