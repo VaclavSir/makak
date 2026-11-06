@@ -132,3 +132,99 @@ describe(createSandboxRuns, () => {
     ).toBeUndefined();
   });
 });
+
+const setupActive = () => {
+  const runs = createFakeRuns();
+  let at = Date.parse("2026-10-20T21:30:05Z");
+  const asked: string[] = [];
+  let failing = false;
+  const sandboxRuns = createSandboxRuns({
+    activeTtlMs: 1000,
+    now: () => new Date(at),
+    projects: [],
+    runs: {
+      ...runs,
+      list: async (name) => {
+        asked.push(name);
+        if (failing) {
+          throw new Error("sbx exec failed");
+        }
+        return await runs.list(name);
+      },
+    },
+  });
+  return {
+    advance: (ms: number) => {
+      at += ms;
+    },
+    asked,
+    fail: (value: boolean) => {
+      failing = value;
+    },
+    runs,
+    sandboxRuns,
+  };
+};
+
+describe("active runs", () => {
+  const other: Sandbox = { ...sandbox, id: "id-2", name: "t" };
+
+  it("lists each running sandbox's running runs, and skips stopped ones", async () => {
+    const { asked, sandboxRuns } = setupActive();
+    const id = await sandboxRuns.start(sandbox, "npm test", "/p/shop");
+    await expect(
+      sandboxRuns.active([sandbox, { ...other, status: "stopped" }])
+    ).resolves.toStrictEqual({ "id-1": [{ command: "npm test", id }] });
+    expect(asked).toStrictEqual(["s"]);
+  });
+
+  it("asks a sandbox once per interval, sharing an answer in progress", async () => {
+    const { advance, asked, sandboxRuns } = setupActive();
+    await Promise.all([
+      sandboxRuns.active([sandbox]),
+      sandboxRuns.active([sandbox]),
+    ]);
+    await sandboxRuns.active([sandbox]);
+    expect(asked).toHaveLength(1);
+    advance(1000);
+    await sandboxRuns.active([sandbox]);
+    expect(asked).toHaveLength(2);
+  });
+
+  it("counts the runs listed for the sandbox's page as asking", async () => {
+    const { asked, sandboxRuns } = setupActive();
+    await sandboxRuns.list(sandbox);
+    await sandboxRuns.active([sandbox]);
+    expect(asked).toStrictEqual(["s"]);
+  });
+
+  it("asks again after a run is started or stopped from the Panel", async () => {
+    const { runs, sandboxRuns } = setupActive();
+    await expect(sandboxRuns.active([sandbox])).resolves.toStrictEqual({
+      "id-1": [],
+    });
+    const id = await sandboxRuns.start(sandbox, "npm test", "/p/shop");
+    await expect(sandboxRuns.active([sandbox])).resolves.toStrictEqual({
+      "id-1": [{ command: "npm test", id }],
+    });
+    await sandboxRuns.stop(sandbox, id);
+    await expect(runs.list("s")).resolves.toMatchObject([{ state: "stopped" }]);
+    await expect(sandboxRuns.active([sandbox])).resolves.toStrictEqual({
+      "id-1": [],
+    });
+  });
+
+  it("leaves out a sandbox that can't be asked, and asks it again next time", async () => {
+    const { asked, fail, sandboxRuns } = setupActive();
+    fail(true);
+    await expect(sandboxRuns.active([sandbox, other])).resolves.toStrictEqual(
+      {}
+    );
+    fail(false);
+    await expect(sandboxRuns.active([sandbox, other])).resolves.toStrictEqual({
+      "id-1": [],
+      "id-2": [],
+    });
+    expect(asked).toStrictEqual(["s", "t", "s", "t"]);
+  });
+});

@@ -26,6 +26,15 @@ export interface PackageScripts {
   names: string[];
 }
 
+/** A run still running, as the sidebar shows it. */
+export interface ActiveRun {
+  command: string;
+  id: string;
+}
+
+/** How long a sandbox's active runs are reused. Every open tab polls. */
+export const ACTIVE_TTL_MS = 10_000;
+
 export interface SandboxRuns {
   /** Commands configured for the sandbox's projects. */
   commands: (sandbox: Sandbox) => RunCommand[];
@@ -33,6 +42,13 @@ export interface SandboxRuns {
   scripts: (sandbox: Sandbox) => Promise<PackageScripts | undefined>;
   /** Newest first. Only a running sandbox can be asked. */
   list: (sandbox: Sandbox) => Promise<Run[]>;
+  /**
+   * The runs running in each running sandbox, by sandbox id, oldest first.
+   * A sandbox is asked at most once per `activeTtlMs`, shared by everyone
+   * asking, and its last `list` counts as asking. One that can't be asked
+   * is left out. Never fails.
+   */
+  active: (sandboxes: Sandbox[]) => Promise<Record<string, ActiveRun[]>>;
   /** Returns the new run's id. `cwd` must be one of its workspaces. */
   start: (sandbox: Sandbox, command: string, cwd: string) => Promise<string>;
   /** A script from `scripts`; it must be in its package.json. */
@@ -85,15 +101,70 @@ const requireRunning = (sandbox: Sandbox) => {
   }
 };
 
+const activeOf = (listed: Run[]): ActiveRun[] =>
+  listed
+    .filter((run) => run.state === "running")
+    .map(({ command, id }) => ({ command, id }));
+
 export const createSandboxRuns = ({
+  activeTtlMs = ACTIVE_TTL_MS,
   now = () => new Date(),
   projects,
   runs,
 }: {
+  activeTtlMs?: number;
   now?: () => Date;
   projects: Config["runs"]["projects"];
   runs: Runs;
 }): SandboxRuns => {
+  // Each running sandbox's active runs, by sandbox id. `at` is when the
+  // answer came; undefined while the sandbox is still being asked, which is
+  // always shared, so polling never stacks up `sbx exec`s.
+  const activity = new Map<
+    string,
+    { at: number | undefined; runs: Promise<ActiveRun[]> }
+  >();
+
+  const remember = (sandbox: Sandbox, listed: Run[]) => {
+    activity.set(sandbox.id, {
+      at: now().getTime(),
+      runs: Promise.resolve(activeOf(listed)),
+    });
+  };
+
+  // A run started or stopped from here shows at the next poll.
+  const forget = (sandbox: Sandbox) => {
+    activity.delete(sandbox.id);
+  };
+
+  const activeIn = async (
+    sandbox: Sandbox
+  ): Promise<ActiveRun[] | undefined> => {
+    let entry = activity.get(sandbox.id);
+    if (
+      entry === undefined ||
+      (entry.at !== undefined && now().getTime() - entry.at >= activeTtlMs)
+    ) {
+      const asking = {
+        at: undefined as number | undefined,
+        runs: (async () => activeOf(await runs.list(sandbox.name)))(),
+      };
+      entry = asking;
+      activity.set(sandbox.id, asking);
+    }
+    const asked = entry;
+    try {
+      const value = await asked.runs;
+      asked.at ??= now().getTime();
+      return value;
+    } catch {
+      // Not cached, so the next poll asks again.
+      if (activity.get(sandbox.id) === asked) {
+        activity.delete(sandbox.id);
+      }
+    }
+  };
+
   const start = async (sandbox: Sandbox, command: string, cwd: string) => {
     requireRunning(sandbox);
     if (command.trim() === "") {
@@ -104,6 +175,7 @@ export const createSandboxRuns = ({
     }
     const id = newRunId(now());
     await runs.start(sandbox.name, { command, cwd, id });
+    forget(sandbox);
     return id;
   };
 
@@ -123,6 +195,25 @@ export const createSandboxRuns = ({
   };
 
   return {
+    active: async (sandboxes) => {
+      const running = sandboxes.filter(
+        (sandbox) => sandbox.status === "running"
+      );
+      // Sandboxes that stopped or are gone are asked afresh when they run.
+      for (const id of activity.keys()) {
+        if (!running.some((sandbox) => sandbox.id === id)) {
+          activity.delete(id);
+        }
+      }
+      const answers = await Promise.all(
+        running.map(async (sandbox) => {
+          const active = await activeIn(sandbox);
+          return active === undefined ? [] : [[sandbox.id, active] as const];
+        })
+      );
+      return Object.fromEntries(answers.flat());
+    },
+
     commands: (sandbox) =>
       projects.flatMap(({ commands, path }) =>
         sandbox.workspaces.some((workspace) => samePath(workspace, path))
@@ -133,6 +224,7 @@ export const createSandboxRuns = ({
     list: async (sandbox) => {
       requireRunning(sandbox);
       const listed = await runs.list(sandbox.name);
+      remember(sandbox, listed);
       return listed.toReversed();
     },
 
@@ -194,6 +286,7 @@ export const createSandboxRuns = ({
     stop: async (sandbox, id) => {
       requireRunning(sandbox);
       await runs.stop(sandbox.name, id);
+      forget(sandbox);
     },
   };
 };

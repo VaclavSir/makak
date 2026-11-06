@@ -16,6 +16,7 @@
     sortSandboxes,
   } from "#lib/sandbox-order.ts";
   import type { SandboxOrder } from "#lib/sandbox-order.ts";
+  import type { ActiveRun } from "#server/sandbox-runs.ts";
   import type { LayoutProps } from "./$types";
 
   const REFRESH_MS = 5000;
@@ -47,6 +48,26 @@
       // As above.
     }
   };
+
+  // Each sandbox's running commands and prompts, by sandbox id. They come
+  // after the page; the last answer stays shown while a newer one comes,
+  // so the markers don't blink at every poll.
+  let active = $state<Record<string, ActiveRun[]>>({});
+  let latest: Promise<Record<string, ActiveRun[]>> | undefined;
+  $effect(() => {
+    const pending = data.active;
+    latest = pending;
+    const settle = async () => {
+      const value = await pending;
+      if (latest === pending) {
+        active = value;
+      }
+    };
+    void settle();
+  });
+
+  const activeLabel = (runs: ActiveRun[]) =>
+    `${runs.length} running: ${runs.map(({ command }) => command).join(", ")}`;
 
   const refresh = () => {
     if (document.visibilityState === "visible") {
@@ -175,6 +196,14 @@
               <StatusDot status={sandbox.status} />
               <span class="name">{sandbox.name}</span>
               <span class="visually-hidden">({sandbox.status})</span>
+              {#if sandbox.status === "running" && (active[sandbox.id]?.length ?? 0) > 0}
+                {@const runs = active[sandbox.id] ?? []}
+                <span
+                  class="runs"
+                  title={activeLabel(runs)}
+                  aria-label={activeLabel(runs)}>▶ {runs.length}</span
+                >
+              {/if}
             </a>
           </li>
         {/each}
@@ -308,6 +337,18 @@
     flex: 1;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  /* Commands and prompts running in the sandbox. */
+  .runs {
+    flex: none;
+    border-radius: 999px;
+    background: var(--selected);
+    padding: 0 0.4rem;
+    color: var(--running);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.5;
   }
 
   .visually-hidden {
