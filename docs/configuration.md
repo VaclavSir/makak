@@ -130,6 +130,33 @@ Claude Code gives up on a tool call that sends nothing for five minutes, and the
 
 A sandbox with `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT=0` in its environment, as the [example base env file](../examples/envs/00-base.sbxenv.yaml) sets it, waits as long as the call is held. Raise `holdSeconds` for servers only such sandboxes use, e.g. to `14400` for four hours; Claude Code moves a call that takes over two minutes to the background, so the agent keeps working meanwhile.
 
+### Secrets
+
+Keep tokens out of this file: give a header or a local server's variable as `{ "env": "NAME" }`, and start the Panel with `NAME` set. It reads the variables once at start, so restart it after changing one, and keeps their values in memory only.
+
+With [1Password's CLI](https://developer.1password.com/docs/cli/), store each value in an item, e.g. in a vault named `Makak`. Store it as the Panel sends it: for an `Authorization` header, with `Bearer ` in front.
+
+```sh
+op item create --vault Makak --category "API Credential" --title github-mcp "credential=Bearer github_pat_…"
+```
+
+That leaves the token in your shell's history; creating the item in the 1Password app doesn't.
+
+List the variables in an env file of references, which holds no secrets itself, e.g. `~/makak/secrets.env`:
+
+```sh
+GITHUB_MCP_AUTHORIZATION=op://Makak/github-mcp/credential
+SHOP_DATABASE_URI=op://Makak/shop-database/credential
+```
+
+and start the Panel through `op run`, which resolves them and passes them to it alone:
+
+```sh
+op run --env-file ~/makak/secrets.env -- makak start
+```
+
+Not exported from a shell profile, the tokens reach no other process. A local server gets only its own variables, never the Panel's other ones.
+
 ### Listener ports
 
 A listener on a port below 1024, such as 443, binds the wildcard address: macOS lets a normal user bind those ports there, and nowhere else. It still serves loopback peers only, dropping any other connection; expect the macOS firewall to ask about incoming connections on the first start, and deny them. Other listeners bind `127.0.0.1`.
