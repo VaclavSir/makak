@@ -167,7 +167,7 @@ describe(createLocalServers, () => {
     await expect(answer.json()).resolves.toMatchObject({
       error: {
         message:
-          "The local notes server ended before answering (exited with code 1). Its output is on the MCP approvals page.",
+          "The local notes server ended before answering (exited with code 1). Its output is on the MCP servers page.",
       },
     });
     expect(servers.status("notes")).toStrictEqual({

@@ -158,7 +158,7 @@
           {#if server.problem !== undefined}
             <span class="file-error"
               >{server.problem} See
-              <a href="/approvals">MCP approvals</a>.</span
+              <a href="/mcp-panel/servers">MCP servers</a>.</span
             >
           {/if}
         </li>

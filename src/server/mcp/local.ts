@@ -215,7 +215,7 @@ export const createLocalServers = ({
       }
       return rpcError(
         502,
-        `The local ${server.name} server ended before answering (${(error as Error).message}). Its output is on the MCP approvals page.`
+        `The local ${server.name} server ended before answering (${(error as Error).message}). Its output is on the MCP servers page.`
       );
     }
     const sessionHeader = { "mcp-session-id": id };

@@ -61,7 +61,7 @@
 </script>
 
 <p class="muted">
-  Through the Panel's <a href="/approvals">approvals</a>.
+  Through the Panel's <a href="/mcp-panel/servers">MCP servers</a>.
   {running
     ? "A server loaded stays loaded when the sandbox restarts."
     : "Start the sandbox to load or unload servers."}

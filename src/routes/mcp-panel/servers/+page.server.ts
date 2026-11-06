@@ -13,10 +13,6 @@ import { panelOrigin } from "#server/panel.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-const AUDIT_LIMIT = 100;
-
-const DECISIONS = ["allow", "always", "deny"] as const;
-
 /** The wrapped server's URL, without any credentials written into it. */
 const shownUrl = (url: string) => {
   const shown = new URL(url);
@@ -28,16 +24,7 @@ const shownUrl = (url: string) => {
 export const load: PageServerLoad = async ({ depends }) => {
   depends(MCP);
   const { config, mcp } = getPanelContext();
-  const {
-    approvals,
-    audit,
-    health,
-    local,
-    oauth,
-    registrations,
-    servers,
-    store,
-  } = mcp;
+  const { health, local, oauth, registrations, servers, store } = mcp;
   // Never the servers' headers: they hold the credentials.
   const described = await orUserError(
     async () =>
@@ -70,15 +57,12 @@ export const load: PageServerLoad = async ({ depends }) => {
         })
       )
   );
-  const recent = await orUserError(() => audit.recent(AUDIT_LIMIT));
   const registered = await orUserError(() => registrations.status());
   return {
-    audit: recent.ok ? recent.value : [],
-    error: [described, recent, registered]
+    error: [described, registered]
       .flatMap((result) => (result.ok ? [] : [result.message]))
       .join(" "),
     origin: panelOrigin(config.panel.hostname, config.panel.port),
-    pending: approvals.pending(),
     servers: (described.ok ? described.value : []).map((server) => ({
       ...server,
       // Undefined when sbx couldn't say.
@@ -113,34 +97,6 @@ export const actions: Actions = {
     }
     await health.check(server);
     return { checked: server };
-  },
-
-  decide: async ({ request }) => {
-    const form = await request.formData();
-    const id = field(form, "id");
-    const decision = DECISIONS.find((each) => each === field(form, "decision"));
-    if (id === undefined || decision === undefined) {
-      return fail(400, INCOMPLETE);
-    }
-    const { approvals, store } = getPanelContext().mcp;
-    // The server and tool come from the queue, never from the form.
-    const pending = approvals.pending().find((each) => each.id === id);
-    if (pending === undefined) {
-      return fail(404, {
-        message:
-          "That request is no longer waiting: it was decided already, or the Panel restarted.",
-      });
-    }
-    if (decision === "always") {
-      const saved = await attempt(() =>
-        store.allow(pending.server, pending.tool)
-      );
-      if (!saved.ok) {
-        return saved.failure;
-      }
-    }
-    approvals.decide(id, decision === "deny" ? "denied" : "approved");
-    return { decided: id };
   },
 
   disallow: async ({ request }) => {

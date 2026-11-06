@@ -1,11 +1,12 @@
 <script lang="ts">
   import "../app.css";
 
-  import { afterNavigate, invalidate } from "$app/navigation";
+  import { afterNavigate, invalidate, pushState } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { onMount } from "svelte";
   import favicon from "#lib/assets/favicon.svg";
+  import ApprovalsDialog from "#lib/components/approvals-dialog.svelte";
   import StatusDot from "#lib/components/status-dot.svelte";
   import { MCP, SANDBOXES } from "#lib/dependencies.ts";
   import {
@@ -59,11 +60,34 @@
   const PENDING_PREFIX = /^\(\d+\) /u;
   const showPending = () => {
     const title = document.title.replace(PENDING_PREFIX, "");
-    const count = data.pendingApprovals;
+    const count = data.pending.length;
     document.title = count > 0 ? `(${count}) ${title}` : title;
   };
   $effect(showPending);
   afterNavigate(showPending);
+
+  const MCP_PAGES = [
+    { href: resolve("/mcp-panel/servers"), label: "Servers" },
+    { href: resolve("/mcp-panel/log"), label: "Log" },
+  ] as const;
+
+  // The queue opens over the page, which stays as it was. Opened in a new
+  // tab, or without JavaScript, it is a page of its own.
+  const openApprovals = (event: MouseEvent) => {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (page.state.approvals !== true) {
+      pushState("", { approvals: true });
+    }
+  };
 
   // Polls while the tab is visible, and catches up as soon as it is shown.
   $effect(() => {
@@ -83,6 +107,37 @@
 <div class="shell">
   <nav>
     <a class="home" href={resolve("/")}>Makak Panel</a>
+    <h2 class="heading">MCP</h2>
+    <ul class="links">
+      {#each MCP_PAGES as { href, label } (href)}
+        <li>
+          <a
+            {href}
+            aria-current={page.url.pathname === href ? "page" : undefined}
+            >{label}</a
+          >
+        </li>
+      {/each}
+      <li>
+        <a
+          href={resolve("/mcp-panel/approvals")}
+          aria-current={page.route.id === "/mcp-panel/approvals" ||
+          page.state.approvals === true
+            ? "page"
+            : undefined}
+          onclick={page.route.id === "/mcp-panel/approvals"
+            ? undefined
+            : openApprovals}
+        >
+          Approvals
+          {#if data.pending.length > 0}
+            <span class="badge" aria-label={`${data.pending.length} waiting`}
+              >{data.pending.length}</span
+            >
+          {/if}
+        </a>
+      </li>
+    </ul>
     <div class="heading">
       <h2>Sandboxes</h2>
       <select
@@ -103,18 +158,6 @@
       aria-current={page.route.id === "/new" ? "page" : undefined}
       >+ New sandbox</a
     >
-    <a
-      class="new"
-      href={resolve("/approvals")}
-      aria-current={page.route.id === "/approvals" ? "page" : undefined}
-    >
-      MCP approvals
-      {#if data.pendingApprovals > 0}
-        <span class="badge" aria-label={`${data.pendingApprovals} waiting`}
-          >{data.pendingApprovals}</span
-        >
-      {/if}
-    </a>
     {#if sorted === undefined}
       <p class="error">{data.sbxError}</p>
     {:else if sorted.length === 0}
@@ -143,6 +186,8 @@
     {@render children()}
   </main>
 </div>
+
+<ApprovalsDialog pending={data.pending} />
 
 <style>
   .shell {
@@ -179,6 +224,15 @@
 
   nav h2 {
     margin: 0;
+  }
+
+  /* MCP's, which has no order to choose. */
+  h2.heading {
+    margin: 1.25rem 0.5rem 0.5rem;
+  }
+
+  .links li a {
+    display: block;
   }
 
   .heading select {

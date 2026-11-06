@@ -5,7 +5,13 @@ declare global {
     // interface Error {}
     // interface Locals {}
     // interface PageData {}
-    // interface PageState {}
+    interface PageState {
+      /** The approval queue is open over the page. */
+      approvals?: boolean;
+    }
     // interface Platform {}
   }
 }
+
+// oxlint-disable-next-line unicorn/require-module-specifiers -- a module, as `declare global` needs
+export {};

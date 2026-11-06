@@ -29,7 +29,7 @@
 {:else if data.server === undefined || data.code === undefined}
   <p class="error">
     This sign-in has expired or was already used. Start it again from the MCP
-    approvals page.
+    servers page.
   </p>
 {:else}
   <form method="POST" action="?/finish" bind:this={finish} use:enhance>
@@ -40,7 +40,7 @@
   </form>
 {/if}
 
-<p><a href={resolve("/approvals")}>Back to MCP approvals</a></p>
+<p><a href={resolve("/mcp-panel/servers")}>Back to MCP servers</a></p>
 
 <style>
   .error {

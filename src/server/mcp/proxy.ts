@@ -42,7 +42,7 @@ export interface McpServer {
 export interface McpProxyOptions {
   approvals: Approvals;
   audit: Audit;
-  /** Told of every error a server gives, for the approvals page. */
+  /** Told of every error a server gives, for the servers page. */
   health?: Pick<McpHealth, "noteError">;
   log: (message: string) => void;
   oauth?: Pick<OAuth, "accessToken" | "refresh" | "signOut">;
@@ -130,7 +130,7 @@ const sendToolError = (res: ServerResponse, id: unknown, text: string) => {
 };
 
 const signedOutText = (server: string) =>
-  `Makak Panel is not signed in to the ${server} MCP server. Ask the user to sign in on the Panel's MCP approvals page, then try again.`;
+  `Makak Panel is not signed in to the ${server} MCP server. Ask the user to sign in on the Panel's MCP servers page, then try again.`;
 
 /** The body, or undefined when it is too large. */
 const readBody = async (req: IncomingMessage): Promise<string | undefined> => {
@@ -185,7 +185,7 @@ export const createMcpProxy = ({
   const byName = new Map(servers.map((server) => [server.name, server]));
   const upstream = given ?? createUpstream({ fetch: fetchUpstream, oauth });
 
-  /** Logs a server's error, and keeps it for the approvals page. */
+  /** Logs a server's error, and keeps it for the servers page. */
   const failed = (server: string, message: string) => {
     log(`${server}: ${message}`);
     health?.noteError(server, message);

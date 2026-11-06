@@ -107,10 +107,10 @@ A full example, with the defaults where there are any:
 | `mcp.servers[].name` |  | Lower-case letters, digits and underscores. Its endpoint is `/mcp/<name>`, registered with sbx as `<name>`. |
 | `mcp.servers[].url` |  | The server's Streamable HTTP endpoint, for a remote server. A server has either `url` or `command`. |
 | `mcp.servers[].command` |  | For a local server: the command the Panel runs on this machine, talking MCP to it over stdin and stdout, one process per sandbox that loads it. It runs as you, with your permissions; prefer `docker run -i` to contain it. |
-| `mcp.servers[].args` | `[]` | The local server's arguments. They're shown on the approvals page: put secrets in `env`. |
+| `mcp.servers[].args` | `[]` | The local server's arguments. They're shown on the MCP servers page: put secrets in `env`. |
 | `mcp.servers[].env` | `{}` | Variables for the local server, each the text itself or `{ "env": "NAME" }`, like headers. It gets these, and only a few of the Panel's own variables, such as `PATH` and `HOME`, so it never sees another server's credentials. |
 | `mcp.servers[].dir` | the Panel's | The local server's working directory. |
-| `mcp.servers[].oauth` |  | For a remote server: the Panel signs in to the server with OAuth, once, from the MCP approvals page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
+| `mcp.servers[].oauth` |  | For a remote server: the Panel signs in to the server with OAuth, once, from the MCP servers page, and sends its token with every sandbox's calls. `scopes` are the scopes to ask for; GitLab needs `["mcp"]`. The server must publish OAuth metadata and let clients register themselves, as MCP servers that support OAuth do. |
 | `mcp.servers[].headers` | `{}` | For a remote server: headers the Panel sends to it, such as a token for servers that don't sign in with OAuth. A value is either the text itself or `{ "env": "NAME" }`, read from the Panel's environment at start, which keeps the secret out of this file. Not `Authorization` with `oauth`. |
 | `mcp.servers[].allow` | `[]` | Tools that run without asking. _Always allow_ and _Allow_ in the Panel add to this list without editing the file. |
 | `mcp.servers[].holdSeconds` | `mcp.holdSeconds` | The hold for this server. |
@@ -120,7 +120,7 @@ A full example, with the defaults where there are any:
 | `runs.projects[].path` |  | The project, as the sandbox's workspace path on the host. |
 | `runs.projects[].commands` |  | `label` is the button's text; `command` is run with bash in the project's directory. |
 | `ssh.hostSuffix` | `.sbx` | The suffix of the SSH host pattern `sbx setup ssh` wrote (`*.sbx` unless you passed `--alias`). The Panel shows `<sandbox>.sbx` as the SSH host. |
-| `stateDir` | `~/makak/state` | Where the Panel keeps its own data. `sandboxes.json`: each sandbox's notes, the env files and args it was created with, and the MCP servers loaded into it. `mcp.json`: the tools allowed from the approvals page, on top of each server's `allow`, and the hashed tokens of the sbx registrations. `oauth.json`: the OAuth clients and tokens of the servers the Panel signs in to. `mcp-audit.jsonl`: every tool call and its outcome, appended only. |
+| `stateDir` | `~/makak/state` | Where the Panel keeps its own data. `sandboxes.json`: each sandbox's notes, the env files and args it was created with, and the MCP servers loaded into it. `mcp.json`: the tools allowed from the MCP servers page, on top of each server's `allow`, and the hashed tokens of the sbx registrations. `oauth.json`: the OAuth clients and tokens of the servers the Panel signs in to. `mcp-audit.jsonl`: every tool call and its outcome, appended only. |
 
 Handoffs are not implemented yet; the setting is validated now so the file format is stable.
 

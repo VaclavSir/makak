@@ -71,7 +71,7 @@ export const createMcpLoads = ({
       }
       return [
         status.state === "missing"
-          ? `${name} isn't registered with sbx. Register it on the MCP approvals page first.`
+          ? `${name} isn't registered with sbx. Register it on the MCP servers page first.`
           : `${name} is registered with sbx, but can't be used: ${status.detail ?? "sbx says so"}`,
       ];
     });

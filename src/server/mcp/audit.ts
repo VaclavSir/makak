@@ -31,15 +31,15 @@ export type AuditRecord = z.output<typeof entrySchema>;
 
 export interface Audit {
   record: (entry: AuditEntry) => Promise<void>;
-  /** The last `limit` entries, newest first. */
-  recent: (limit: number) => Promise<AuditRecord[]>;
+  /** The last `limit` entries, newest first; only the server's, if given. */
+  recent: (limit: number, server?: string) => Promise<AuditRecord[]>;
 }
 
 export const createAudit = (stateDir: string): Audit => {
   const file = path.join(stateDir, "mcp-audit.jsonl");
 
   return {
-    recent: async (limit) => {
+    recent: async (limit, server) => {
       let text: string;
       try {
         text = await readFile(file, "utf-8");
@@ -56,7 +56,10 @@ export const createAudit = (stateDir: string): Audit => {
           break;
         }
         try {
-          records.push(entrySchema.parse(JSON.parse(line)));
+          const record = entrySchema.parse(JSON.parse(line));
+          if (server === undefined || record.server === server) {
+            records.push(record);
+          }
         } catch {
           // Skipped.
         }

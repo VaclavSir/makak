@@ -527,7 +527,7 @@ export const createOAuth = ({
       pending.delete(state);
       if (entry === undefined) {
         throw new OAuthError(
-          "This sign-in has expired or was already used. Start it again from the MCP approvals page."
+          "This sign-in has expired or was already used. Start it again from the MCP servers page."
         );
       }
       let result: Awaited<ReturnType<typeof requestTokens>>;

@@ -37,6 +37,6 @@ export const actions: Actions = {
     }
     // So the page shows what the sign-in made reachable, its tools.
     await health.check(result.value);
-    redirect(303, "/approvals");
+    redirect(303, "/mcp-panel/servers");
   },
 };

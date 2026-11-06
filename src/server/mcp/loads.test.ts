@@ -91,7 +91,7 @@ describe(createMcpLoads, () => {
     await expect(loads.problems(["linear"])).resolves.toStrictEqual([]);
     await expect(loads.problems([])).resolves.toStrictEqual([]);
     await expect(loads.problems(["gitlab", "jira"])).resolves.toStrictEqual([
-      "gitlab isn't registered with sbx. Register it on the MCP approvals page first.",
+      "gitlab isn't registered with sbx. Register it on the MCP servers page first.",
       "jira is registered with sbx, but can't be used: Register it again.",
     ]);
     await expect(loads.problems(["linear", "nope"])).resolves.toStrictEqual([
