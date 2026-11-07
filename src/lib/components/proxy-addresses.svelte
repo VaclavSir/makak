@@ -49,21 +49,27 @@
         {:else}
           <a href={url} target="_blank" rel="noreferrer"><code>{url}</code></a>
         {/if}
-        {#if resolution.ok}
-          <span
-            class="muted"
-            title={elevated
-              ? "The proxy adds TLS; the server in the sandbox doesn't need it."
-              : undefined}
-          >
-            → port {resolution.port.sandboxPort}{elevated ? " · elevated" : ""}
-          </span>
-        {:else}
-          <span class="missing" title={publishCommand(name, resolution.publish)}
-            >port {listener.upstream.join(" or ")} not published</span
-          >
-        {/if}
-        <CopyButton label={url} value={url} />
+        <span class="meta">
+          {#if resolution.ok}
+            <span
+              class="muted"
+              title={elevated
+                ? "The proxy adds TLS; the server in the sandbox doesn't need it."
+                : undefined}
+            >
+              → port {resolution.port.sandboxPort}{elevated
+                ? " · elevated"
+                : ""}
+            </span>
+          {:else}
+            <span
+              class="missing"
+              title={publishCommand(name, resolution.publish)}
+              >port {listener.upstream.join(" or ")} not published</span
+            >
+          {/if}
+          <CopyButton label={url} value={url} />
+        </span>
       </li>
     {/each}
   </ul>
@@ -82,17 +88,29 @@
     list-style: none;
   }
 
+  /* One line while it fits; otherwise the address takes the whole line,
+     with its port and Copy under it, on the right. */
   li {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.25rem 0.75rem;
     border-bottom: 1px solid var(--border);
     padding: 0.3rem 0;
   }
 
+  /* Broken only when it's longer than the whole line. */
   li > :first-child {
+    flex: 1 0 auto;
+    max-width: 100%;
     overflow-wrap: anywhere;
+  }
+
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-left: auto;
   }
 
   .muted {
