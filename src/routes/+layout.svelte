@@ -6,6 +6,7 @@
   import { page } from "$app/state";
   import { onMount } from "svelte";
   import favicon from "#lib/assets/favicon.svg";
+  import ApprovalBell from "#lib/components/approval-bell.svelte";
   import ApprovalsDialog from "#lib/components/approvals-dialog.svelte";
   import StatusDot from "#lib/components/status-dot.svelte";
   import { MCP, SANDBOXES } from "#lib/dependencies.ts";
@@ -94,6 +95,15 @@
 
   // The queue opens over the page, which stays as it was. Opened in a new
   // tab, or without JavaScript, it is a page of its own.
+  const showApprovals = () => {
+    if (
+      page.route.id !== "/mcp-panel/approvals" &&
+      page.state.approvals !== true
+    ) {
+      pushState("", { approvals: true });
+    }
+  };
+
   const openApprovals = (event: MouseEvent) => {
     if (
       event.button !== 0 ||
@@ -105,9 +115,7 @@
       return;
     }
     event.preventDefault();
-    if (page.state.approvals !== true) {
-      pushState("", { approvals: true });
-    }
+    showApprovals();
   };
 
   // Polls while the tab is visible, and catches up as soon as it is shown.
@@ -128,7 +136,10 @@
 <div class="shell">
   <nav>
     <a class="home" href={resolve("/")}>Makak Panel</a>
-    <h2 class="heading">MCP</h2>
+    <div class="heading">
+      <h2>MCP</h2>
+      <ApprovalBell onopen={showApprovals} />
+    </div>
     <ul class="links">
       {#each MCP_PAGES as { href, label } (href)}
         <li>
@@ -253,11 +264,6 @@
 
   nav h2 {
     margin: 0;
-  }
-
-  /* MCP's, which has no order to choose. */
-  h2.heading {
-    margin: 1.25rem 0.5rem 0.5rem;
   }
 
   .links li a {

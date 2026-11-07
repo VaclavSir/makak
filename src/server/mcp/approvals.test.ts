@@ -160,4 +160,22 @@ describe(createApprovals, () => {
     expect(approvals.decide(held.id, "approved")).toBeFalsy();
     expect(approvals.decide("nope", "approved")).toBeFalsy();
   });
+
+  it("tells listeners when a request joins or leaves the queue", async () => {
+    const approvals = createApprovals();
+    let heard = 0;
+    approvals.subscribe(() => {
+      throw new Error("A broken listener");
+    });
+    const stop = approvals.subscribe(() => {
+      heard += 1;
+    });
+    await approvals.ask(CALL, SHORT);
+    await approvals.ask(CALL, SHORT);
+    approvals.dismiss(approvals.pending()[0]?.id ?? "");
+    expect(heard).toBe(2);
+    stop();
+    await approvals.ask(CALL, SHORT);
+    expect(heard).toBe(2);
+  });
 });

@@ -56,6 +56,11 @@ export interface Approvals {
    * a decision from it. False when there is no such request.
    */
   dismiss: (id: string) => boolean;
+  /**
+   * Calls `listener` whenever a request joins or leaves `pending`. Returns
+   * a function that stops it.
+   */
+  subscribe: (listener: () => void) => () => void;
 }
 
 interface Entry extends Call {
@@ -85,6 +90,17 @@ export const createApprovals = ({
   now = Date.now,
 } = {}): Approvals => {
   const entries = new Map<string, Entry>();
+  const listeners = new Set<() => void>();
+
+  const changed = () => {
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch {
+        // One listener failing must not hold up a call, or the others.
+      }
+    }
+  };
 
   const newId = () => {
     let id: string;
@@ -147,6 +163,9 @@ export const createApprovals = ({
         waiters: new Set(),
       };
       entries.set(entry.id, entry);
+      if (known === undefined) {
+        changed();
+      }
       const outcome = await wait(entry, holdMs, signal);
       return { earlier: false, id: entry.id, outcome };
     },
@@ -165,6 +184,7 @@ export const createApprovals = ({
       } else {
         entry.decided = { at: now(), decision };
       }
+      changed();
       return true;
     },
 
@@ -175,6 +195,7 @@ export const createApprovals = ({
         return false;
       }
       entries.delete(id);
+      changed();
       return true;
     },
 
@@ -194,6 +215,13 @@ export const createApprovals = ({
           tool: entry.tool,
           waiting: entry.waiters.size > 0,
         }));
+    },
+
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 };

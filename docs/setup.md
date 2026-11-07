@@ -41,6 +41,8 @@ pnpm start
 
 To have `makak` on your PATH, run `pnpm link --global` in the checkout. Installing it as a package doesn't work: Node won't run TypeScript from `node_modules`.
 
+To be notified when a tool call waits for approval while you're elsewhere, click the bell by _MCP_ in the sidebar. On macOS, for notifications that stay on screen until clicked, set the browser's alert style to _Alerts_ rather than _Banners_ in System Settings → Notifications.
+
 For development, `pnpm dev` serves the app through Vite with hot reload, behind the same checks. Add `--fake` to use stand-ins for `sbx` and `git`: `pnpm dev --fake`.
 
 ## Reverse proxy
