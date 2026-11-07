@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../app.css";
 
-  import { afterNavigate, invalidate, pushState } from "$app/navigation";
+  import { afterNavigate, goto, invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { onMount } from "svelte";
@@ -100,7 +100,7 @@
       page.route.id !== "/mcp-panel/approvals" &&
       page.state.approvals !== true
     ) {
-      pushState("", { approvals: true });
+      void goto(page.url.href, { shallow: true, state: { approvals: true } });
     }
   };
 
