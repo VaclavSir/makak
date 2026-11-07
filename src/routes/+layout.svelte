@@ -88,6 +88,17 @@
   $effect(showPending);
   afterNavigate(showPending);
 
+  // Chromium shows a history entry's title as it was when the entry was
+  // left, and passes a title on to the tab only when it changes. Back, such
+  // as when the approvals dialog closes, can so leave a count on the tab
+  // that the document no longer has; changing the title for a moment, in
+  // the same task, puts the document's on the tab.
+  const retitle = () => {
+    const { title } = document;
+    document.title = `${title}\u200B`;
+    document.title = title;
+  };
+
   const MCP_PAGES = [
     { href: resolve("/mcp-panel/servers"), label: "Servers" },
     { href: resolve("/mcp-panel/log"), label: "Log" },
@@ -128,6 +139,8 @@
     };
   });
 </script>
+
+<svelte:window onpopstate={retitle} />
 
 <svelte:head>
   <link rel="icon" href={favicon} />
