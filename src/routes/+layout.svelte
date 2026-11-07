@@ -106,12 +106,15 @@
 
   // The queue opens over the page, which stays as it was. Opened in a new
   // tab, or without JavaScript, it is a page of its own.
-  const showApprovals = () => {
+  const showApprovals = async () => {
     if (
       page.route.id !== "/mcp-panel/approvals" &&
       page.state.approvals !== true
     ) {
-      void goto(page.url.href, { shallow: true, state: { approvals: true } });
+      await goto(page.url.href, { shallow: true, state: { approvals: true } });
+      // Opening it is a navigation, which drops a reload still running,
+      // such as the one a tab starts when shown, e.g. from a notification.
+      await invalidate(MCP, true);
     }
   };
 
@@ -126,7 +129,7 @@
       return;
     }
     event.preventDefault();
-    showApprovals();
+    void showApprovals();
   };
 
   // Polls while the tab is visible, and catches up as soon as it is shown.
