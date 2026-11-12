@@ -14,6 +14,12 @@ It is built around the [Makak Workflow](docs/workflow.md): sandboxes in clone mo
 
 The Panel is reachable only from the machine it runs on.
 
+## Should you use it?
+
+No.
+
+It's something that helps me survive within the constraints I'm given (such as not being allowed to create a separate user for the agents, or use cloud agents). Your situation is likely different, but you can take some parts as inspiration, adjust the specification to your own needs, and let your agents recreate these parts.
+
 ## Development
 
 Requires Node.js 22.18 or newer, pnpm, and a one-time setup of the Panel's hostname and certificate: see [docs/setup.md](docs/setup.md).

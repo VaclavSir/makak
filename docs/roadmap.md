@@ -83,6 +83,7 @@ Non-interactive commands and prompts without a terminal.
 - Commands configured per project, `package.json` scripts, arbitrary commands, and one-shot agent prompts.
 - Output streamed to the browser, with status, stop and rerun. Survives Panel restarts.
 - Runs open in tabs on the sandbox page, and a rerun reuses its tab; every run is listed under History.
+- The sidebar shows how many commands and prompts each sandbox is running.
 
 **Done when:** `npm start` can be launched, watched, stopped and rerun from the Panel, and is still visible after the Panel restarts.
 
@@ -90,9 +91,12 @@ Non-interactive commands and prompts without a terminal.
 
 The only gate on the MCP channel.
 
+**Status: done.** Checked against GitLab on 2026-11-12. See [MCP proxy](architecture.md#mcp-proxy).
+
 - One endpoint per server, on the Panel's domain, shared by every sandbox, with a token per server. Calls aren't attributed to sandboxes: the gateway can't say which one calls.
 - Allowlisted tools pass through; others are held until approved or denied, and the agent is told to call again when nobody decided in time.
-- Global approval queue: readable payloads, **allow once** / **always allow**, and a notification while anything is pending.
+- Global approval queue: readable payloads, **allow once** / **always allow** / **deny**, and why a call stopped waiting, with **dismiss** for one that won't come back. A count in the sidebar and the tab title while anything is pending, and browser notifications while the Panel isn't looked at.
+- Signing the Panel in to a server with OAuth, once per server.
 - Audit log of all calls.
 - Registering each server with sbx once, from the MCP page, with its token in an sbx secret, and its registration's state from `sbx mcp ls`.
 - Checking each server from the Panel, its last error, and its tools listed with allow toggles.
@@ -104,7 +108,7 @@ The only gate on the MCP channel.
 ## 7. Cleanup and hardening
 
 - Warning for sandboxes that can reach the forge, read from `sbx policy ls`.
-- Complete teardown: env, per-sandbox MCP registrations and their secrets.
+- Complete teardown of everything the Panel set up for a sandbox outside it.
 - Orphan sweep on start and on demand, reporting config residue and unremoved work separately.
 - Warning when a new sandbox reuses a removed one's name while `refs/sandboxes/<name>/` holds commits no branch has: sbx may overwrite that copy.
 - Handoff directories: per-sandbox creation, preview, and copying between sandboxes.
@@ -115,6 +119,5 @@ Candidates, not commitments:
 
 - sbx network-approval queue alongside the MCP queue.
 - Editing a running sandbox's network policy.
-- OS notifications or a badge for pending approvals.
 - Merge request review flow.
 - Signing a browser in again without restarting the Panel, e.g. `makak open` talking to the running instance.

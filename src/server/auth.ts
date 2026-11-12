@@ -54,7 +54,7 @@ export const createAuth = ({
 };
 
 export const sessionCookie = (sessionId: string): string =>
-  `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+  `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax`;
 
 /** All values of the session cookie. There can be several if one was planted. */
 export const sessionIdsFromCookieHeader = (header?: string): string[] =>

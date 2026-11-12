@@ -48,9 +48,9 @@ The checks are pure functions in `src/server/security.ts`; the wiring is in `src
 2. It opens `https://makakctl.test:7443/_makak/login?token=…` in the browser.
 3. The Panel exchanges the token for a session, sets the cookie and redirects to `/`, so the token leaves the address bar. Responses send `Referrer-Policy: no-referrer`, so it never leaks via `Referer` either.
 
-The cookie is `__Host-makak-session` with `HttpOnly; Secure; SameSite=Strict; Path=/`. The `__Host-` prefix makes the browser enforce host-only scope. `SameSite=Strict` keeps it off requests started by other sites, including the sandboxes' own pages.
+The cookie is `__Host-makak-session` with `HttpOnly; Secure; SameSite=Lax; Path=/`. The `__Host-` prefix makes the browser enforce host-only scope. `SameSite=Lax` keeps it off requests that other sites, including the sandboxes' own pages, start in the background (fetches, forms that post, frames, images), but sends it when you follow a link to the Panel, such as the one on every proxy error page.
 
-That includes links to the Panel, such as the one on every proxy error page. A cross-site navigation without a session gets a page that reloads itself instead of the 401; the reload starts on the Panel's own origin, so the browser sends the cookie. It reads nothing and changes nothing, and a reload that still has no session gets the 401. A short-lived `SameSite=Lax` marker cookie makes sure the page reloads only once, even in a browser that would treat the reload as cross-site too.
+`Lax` rather than `Strict` is a deliberate choice. `Strict` would leave the cookie off those links too, and getting it back took a page that reloads itself from the Panel's origin, which ended up the same as `Lax`. The navigations `Lax` lets through are top-level `GET`s: they change no state, the page they open can't be framed (`frame-ancestors 'none'`), and the site that started them can't read it. Every state-changing request still needs the Panel's `Origin`.
 
 Tokens and sessions are kept in memory, hashed. Restarting the Panel signs every browser out; `makak start` signs the current one back in.
 

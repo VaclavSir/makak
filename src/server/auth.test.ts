@@ -50,9 +50,9 @@ describe(createAuth, () => {
 });
 
 describe("session cookie", () => {
-  it("is host-only, HttpOnly, Secure and SameSite=Strict", () => {
+  it("is host-only, HttpOnly, Secure and SameSite=Lax", () => {
     expect(sessionCookie("abc")).toBe(
-      `${SESSION_COOKIE}=abc; Path=/; HttpOnly; Secure; SameSite=Strict`
+      `${SESSION_COOKIE}=abc; Path=/; HttpOnly; Secure; SameSite=Lax`
     );
     expect(SESSION_COOKIE).toMatch(/^__Host-/u);
   });

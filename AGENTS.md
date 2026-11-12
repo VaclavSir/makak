@@ -39,7 +39,7 @@ These are not negotiable. A change that weakens one needs an explicit decision f
 
 - **Loopback only.** The Panel binds loopback. Any listener that must bind a wildcard address (e.g. port 443 on macOS) drops non-loopback peers before doing anything else.
 - **Never served on `localhost`.** The Panel has its own hostname, on a domain separate from the sandbox suffixes, because cookies ignore ports.
-- **Auth.** There is a one-time token exchange at startup, and the session cookie is `HttpOnly; Secure; SameSite=Strict`. Every request checks `Host`; every state-changing request and WebSocket handshake also checks `Origin`.
+- **Auth.** There is a one-time token exchange at startup, and the session cookie is `HttpOnly; Secure; SameSite=Lax`. Every request checks `Host`; every state-changing request and WebSocket handshake also checks `Origin`.
 - **`GET` and `HEAD` never change state.** They are exempt from the `Origin` check, so a state change behind one would be open to CSRF.
 - **Identity comes from credentials, never from content.** An MCP caller is identified only by its bearer token, which names a server's sbx registration, not a sandbox: the gateway passes on no sandbox identity, so the Panel claims none. Never take a sandbox name, or anything else the agent supplies in a payload, as identity.
 - **No automatic data loss.** Removing a sandbox, and deleting handoff directories, needs a blocking confirmation that lists exactly what would be lost. When it is unknown whether data is safe, treat it as unsafe.
